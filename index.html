@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0F172A">
+    <title>DentalCare AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            colors: {
+              'background': '#0F172A',      // Slate 900
+              'surface': '#1E293B',        // Slate 800
+              'surface-light': '#334155',    // Slate 700
+              'primary': '#2DD4BF',        // Teal 400
+              'primary-hover': '#5EEAD4',    // Teal 300
+              'cyan-400': '#22D3EE',        // Cyan 400 for gradient
+              'accent': '#F43F5E',         // Rose 500
+              'accent-hover': '#FB7185',       // Rose 400
+              'text-primary': '#F1F5F9',      // Slate 100
+              'text-secondary': '#94A3B8',    // Slate 400
+              'border': '#334155',          // Slate 700
+            },
+            animation: {
+                'fade-in-down': 'fadeInDown 0.3s ease-out forwards',
+                'fade-in-up': 'fadeInUp 0.4s ease-out forwards',
+            },
+            keyframes: {
+                fadeInDown: {
+                    '0%': { opacity: 0, transform: 'translateY(-15px)' },
+                    '100%': { opacity: 1, transform: 'translateY(0)' },
+                },
+                fadeInUp: {
+                    '0%': { opacity: 0, transform: 'translateY(20px)' },
+                    '100%': { opacity: 1, transform: 'translateY(0)' },
+                }
+            },
+            boxShadow: {
+              'glow-primary': '0 0 20px 0 rgba(45, 212, 191, 0.35)',
+              'glow-primary-lg': '0 0 30px 0 rgba(45, 212, 191, 0.45)',
+            }
+          },
+        },
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.29.1",
+    "react-router-dom": "https://aistudiocdn.com/react-router-dom@^7.9.6",
+    "@supabase/supabase-js": "https://aistudiocdn.com/@supabase/supabase-js@^2.44.4"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-background text-text-primary antialiased">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
