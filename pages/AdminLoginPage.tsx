@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LockIcon } from '../components/icons';
 
-const ADMIN_PASSWORD = 'orthoai2024';
+const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD;
 
 interface AdminLoginPageProps {
     onLoginSuccess: () => void;
