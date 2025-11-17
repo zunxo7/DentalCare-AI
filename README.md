@@ -1,11 +1,3 @@
-Got it — here is a **clean, professional, no-Google, no-AI-Studio, no-extra-crap** README with your banner and your actual Render deployment link.
-
----
-
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
-
 # 🦷 Orthodontic AI Chatbot
 
 A full-stack AI-powered orthodontic assistant that answers dental FAQs, detects English/Urdu/Roman Urdu automatically, and attaches the correct images/videos using embeddings + keyword scoring + GPT-based re-ranking.
