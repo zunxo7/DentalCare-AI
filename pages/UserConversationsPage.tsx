@@ -6,7 +6,8 @@ import { SpinnerIcon, SearchIcon, BotIcon, UserCircleIcon, ChatIcon, BackIcon, V
 const SUGGESTION_PREFIX = '__FAQ_SUGGESTIONS__';
 const SUGGESTION_CHOICE_PREFIX = '__FAQ_SUGGESTION_CHOICE__';
 
-const renderFormattedText = (text: string) => {
+const renderFormattedText = (text: string, isUserMessage: boolean = false) => {
+    const boldColorClass = isUserMessage ? 'text-background/90' : 'text-primary';
     const applyPattern = (
         inputNodes: React.ReactNode[],
         regex: RegExp,
@@ -47,7 +48,7 @@ const renderFormattedText = (text: string) => {
         nodes,
         /__\*\*(.+?)\*\*__/g,
         (match, key) => (
-            <span key={`ub-${key}`} className="font-semibold italic underline">
+            <span key={`ub-${key}`} className={`font-bold italic underline tracking-wide ${boldColorClass}`}>
                 {match}
             </span>
         ),
@@ -57,7 +58,7 @@ const renderFormattedText = (text: string) => {
         nodes,
         /\*\*(.+?)\*\*/g,
         (match, key) => (
-            <span key={`b-${key}`} className="font-semibold">
+            <span key={`b-${key}`} className={`font-bold tracking-wide ${boldColorClass}`}>
                 {match}
             </span>
         ),
@@ -94,20 +95,34 @@ const UserConversationsPage: React.FC = () => {
         try {
             const data = await api.getAdminConversationsWithUsers();
 
-            const userMap = new Map<string, { user: User; convos: Conversation[] }>();
-            (data || []).forEach(convo => {
-                if (!convo.user) return;
+            const userMap = new Map<string, { user: User; convos: Conversation[]; totalTimeSpent: number }>();
+            
+            // Process conversations and calculate time spent
+            for (const convo of data || []) {
+                if (!convo.user) continue;
                 if (!userMap.has(convo.user.id)) {
-                    userMap.set(convo.user.id, { user: convo.user, convos: [] });
+                    userMap.set(convo.user.id, { user: convo.user, convos: [], totalTimeSpent: 0 });
                 }
                 userMap.get(convo.user.id)!.convos.push(convo);
-            });
+                
+                // Fetch messages to calculate time spent
+                try {
+                    const messages = await api.getMessagesForConversation(convo.id);
+                    if (messages && messages.length > 1) {
+                        const firstMsg = new Date(messages[0].created_at).getTime();
+                        const lastMsg = new Date(messages[messages.length - 1].created_at).getTime();
+                        const timeSpentSeconds = Math.round((lastMsg - firstMsg) / 1000);
+                        userMap.get(convo.user.id)!.totalTimeSpent += timeSpentSeconds;
+                    }
+                } catch {}
+            }
 
             const usersWithStats: UserWithStats[] = Array.from(userMap.values())
-                .map(({ user, convos }) => ({
+                .map(({ user, convos, totalTimeSpent }) => ({
                     ...user,
                     conversation_count: convos.length,
                     last_active: convos[0]?.created_at || user.created_at,
+                    time_spent: totalTimeSpent,
                 }))
                 .sort(
                     (a, b) =>
@@ -123,7 +138,7 @@ const UserConversationsPage: React.FC = () => {
             setUsers(usersWithStats);
             setConversationsByUser(convosByUserMap);
             const mediaList = await api.getAllMedia();
-setAllMedia(mediaList || []);
+            setAllMedia(mediaList || []);
         } catch (err: any) {
             console.error(err);
             setError(`Failed to fetch data: ${err.message || 'Unknown error'}`);
@@ -206,80 +221,125 @@ const getMessageAttachments = (msg: ChatMessage): { url: string; title: string; 
         <div className="flex h-[calc(100vh-65px)] bg-background text-text-primary">
             {/* Users List Panel */}
             <aside 
-                className="w-full md:w-1/3 min-w-[300px] max-w-[450px] border-r border-border flex-col bg-surface"
+                className="w-full md:w-80 lg:w-96 border-r border-border flex-col bg-surface/30 backdrop-blur-sm"
                 style={{ display: selectedUser && window.innerWidth < 768 ? 'none' : 'flex' }}
             >
-                <div className="p-4 border-b border-border">
-                    <h2 className="text-lg font-semibold">Users</h2>
-                    <p className="text-sm text-text-secondary">Select a user to view their logs.</p>
-                    <div className="relative mt-4">
+                <div className="p-4 border-b border-border/50 bg-surface/50">
+                    <h2 className="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+                        User Conversations
+                    </h2>
+                    <p className="text-xs text-text-secondary mt-1">Select a user to view chat logs</p>
+                    <div className="relative mt-3">
                         <input
                             type="text"
                             placeholder="Search by name..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full bg-surface-light border border-border rounded-md py-2 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-primary transition-all"
+                            className="w-full bg-surface-light/50 backdrop-blur-sm border border-border/50 rounded-xl py-2.5 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all text-sm"
                         />
-                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><SearchIcon /></div>
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary"><SearchIcon /></div>
                     </div>
                 </div>
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
                     {loading.users ? (
                         <div className="flex justify-center items-center h-full"><SpinnerIcon /></div>
                     ) : filteredUsers.length === 0 ? (
-                        <div className="text-center py-10 text-text-secondary">No users found.</div>
+                        <div className="text-center py-10 text-text-secondary text-sm">No users found.</div>
                     ) : (
-                        <ul>
-                            {filteredUsers.map(user => (
-                                <li key={user.id} onClick={() => handleSelectUser(user)}
-                                    className={`p-4 cursor-pointer transition-colors duration-200 border-l-4 ${selectedUser?.id === user.id ? 'bg-surface-light border-primary' : 'border-transparent hover:bg-surface-light/50'}`}>
-                                    <div className="font-semibold text-text-primary">{user.name}</div>
-                                    <div className="text-sm text-text-secondary mt-1">
-                                        {user.conversation_count} conversations
+                        <div className="p-2 space-y-2">
+                            {filteredUsers.map(user => {
+                                const timeSpent = user.time_spent || 0;
+                                const formatTime = (seconds: number) => {
+                                    const d = Math.floor(seconds / 86400);
+                                    const h = Math.floor((seconds % 86400) / 3600);
+                                    const m = Math.floor((seconds % 3600) / 60);
+                                    const s = Math.round(seconds % 60);
+                                    
+                                    const parts: string[] = [];
+                                    if (d > 0) parts.push(`${d}d`);
+                                    if (h > 0) parts.push(`${h}h`);
+                                    if (m > 0) parts.push(`${m}m`);
+                                    if (s > 0 || parts.length === 0) parts.push(`${s}s`);
+                                    
+                                    return parts.join(' ');
+                                };
+                                const timeDisplay = formatTime(timeSpent);
+                                const isSelected = selectedUser?.id === user.id;
+                                
+                                return (
+                                    <div 
+                                        key={user.id} 
+                                        onClick={() => handleSelectUser(user)}
+                                        className={`p-3 rounded-xl cursor-pointer transition-all duration-200 border ${
+                                            isSelected 
+                                                ? 'bg-gradient-to-br from-primary/20 to-secondary/20 border-primary' 
+                                                : 'bg-surface/50 backdrop-blur-sm border-border/30 hover:border-primary/30 hover:bg-surface-light/50'
+                                        }`}
+                                    >
+                                        <div className="flex items-start gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/30 to-secondary/30 flex items-center justify-center flex-shrink-0">
+                                                <UserCircleIcon className="w-6 h-6 text-primary" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="font-semibold text-sm text-text-primary truncate">{user.name}</div>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <ChatIcon className="w-3 h-3 text-text-secondary/70" />
+                                                    <span className="text-xs text-text-secondary">{user.conversation_count}</span>
+                                                    <span className="text-xs text-text-secondary/50">•</span>
+                                                    <span className="text-xs text-text-secondary/70">{timeDisplay}</span>
+                                                </div>
+                                                <div className="text-xs text-text-secondary/60 mt-0.5">
+                                                    {new Date(user.last_active).toLocaleDateString()}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="text-xs text-text-secondary/70 mt-1">
-                                        Last active: {new Date(user.last_active).toLocaleDateString()}
-                                    </div>
-                                </li>
-                            ))}
-                        </ul>
+                                );
+                            })}
+                        </div>
                     )}
                 </div>
             </aside>
 
             {/* Conversation Log Panel */}
-            <main className="flex-1 flex flex-col" style={{ display: !selectedUser && window.innerWidth < 768 ? 'none' : 'flex' }}>
+            <main className="flex-1 flex flex-col overflow-hidden" style={{ display: !selectedUser && window.innerWidth < 768 ? 'none' : 'flex' }}>
                 {selectedUser ? (
                     <>
-                        <header className="p-4 border-b border-border bg-surface/50 flex items-center gap-4">
-                             <button className="md:hidden p-2 hover:bg-surface-light rounded-full" onClick={() => setSelectedUser(null)}>
+                        <header className="p-4 border-b border-border/50 bg-surface/80 backdrop-blur-sm flex items-center gap-3 sticky top-0 z-10 flex-shrink-0">
+                             <button className="md:hidden p-2 hover:bg-surface-light rounded-full transition-colors flex-shrink-0" onClick={() => setSelectedUser(null)}>
                                 <BackIcon />
                              </button>
-                             <div className="min-w-0">
-                                <h3 className="font-bold text-lg truncate">{selectedUser.name}'s Conversations</h3>
-                                <p className="text-sm text-text-secondary">{selectedUserConversations.length} total logs</p>
+                             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/30 to-secondary/30 flex items-center justify-center flex-shrink-0">
+                                <UserCircleIcon className="w-6 h-6 text-primary" />
+                             </div>
+                             <div className="min-w-0 flex-1 overflow-hidden">
+                                <h3 className="font-bold text-lg truncate">{selectedUser.name}</h3>
+                                <p className="text-xs text-text-secondary truncate">{selectedUserConversations.length} conversation{selectedUserConversations.length !== 1 ? 's' : ''}</p>
                             </div>
                         </header>
-                        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
+                        <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-4 md:p-6 space-y-6 bg-gradient-to-b from-background to-surface/10">
                              {selectedUserConversations.length === 0 ? (
-                                 <div className="text-center py-10 text-text-secondary">This user has no conversations.</div>
+                                 <div className="text-center py-10 text-text-secondary text-sm">This user has no conversations.</div>
                              ) : (
                                 selectedUserConversations.map(convo => (
-                                    <div key={convo.id} className="bg-surface rounded-lg border border-border">
+                                    <div key={convo.id} className="bg-surface/50 backdrop-blur-sm rounded-2xl border border-border/50 overflow-hidden shadow-md hover:border-primary/50 transition-all duration-300 max-w-full">
                                         <div 
-                                            className="p-4 cursor-pointer flex justify-between items-center hover:bg-surface-light/50"
+                                            className="p-4 cursor-pointer flex justify-between items-center hover:bg-surface-light/30 transition-colors"
                                             onClick={() => handleToggleConversation(convo.id)}
                                         >
-                                            <div>
-                                                <p className="font-semibold text-sm truncate">{convo.title || `Conversation #${convo.id}`}</p>
-                                                <p className="text-xs text-text-secondary">{new Date(convo.created_at).toLocaleString()}</p>
+                                            <div className="flex items-center gap-3 flex-1 min-w-0 overflow-hidden">
+                                                <ChatIcon className="w-5 h-5 text-primary flex-shrink-0" />
+                                                <div className="flex-1 min-w-0 overflow-hidden">
+                                                    <p className="font-semibold text-sm truncate">{convo.title || `Conversation #${convo.id}`}</p>
+                                                    <p className="text-xs text-text-secondary/70 truncate">{new Date(convo.created_at).toLocaleString()}</p>
+                                                </div>
                                             </div>
-                                            <span className={`transform transition-transform ${expandedConversationId === convo.id ? 'rotate-90' : 'rotate-0'}`}>
+                                            <div className={`transform transition-transform duration-300 text-primary flex-shrink-0 ml-2 ${expandedConversationId === convo.id ? 'rotate-90' : 'rotate-0'}`}>
                                                 &#x276F;
-                                            </span>
+                                            </div>
                                         </div>
                                         {expandedConversationId === convo.id && (
-                                            <div className="p-4 border-t border-border space-y-4 bg-background/50">
+                                            <div className="p-4 border-t border-border/30 space-y-5 bg-background/30 overflow-x-hidden">
                                                 {loading.messages ? (
                                                     <div className="flex justify-center items-center py-4">
                                                         <SpinnerIcon />
@@ -297,32 +357,34 @@ const getMessageAttachments = (msg: ChatMessage): { url: string; title: string; 
             payload = JSON.parse(msg.text.slice(SUGGESTION_PREFIX.length)) || {};
         } catch {}
 
-        return (
-            <div key={msg.id} className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-surface-light flex items-center justify-center">
-                    <BotIcon className="w-5 h-5 text-text-primary" />
-                </div>
+                        return (
+                            <div key={msg.id} className="flex items-start gap-3 max-w-full">
+                                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-surface-light to-surface border border-primary/30 flex items-center justify-center flex-shrink-0 shadow-lg">
+                                    <BotIcon className="w-6 h-6 text-primary" />
+                                </div>
 
-                <div className="max-w-xl p-4 rounded-2xl bg-surface border border-border text-left">
-                    <p className="font-semibold text-sm">{payload.message}</p>
+                                <div className="max-w-full sm:max-w-xl p-4 rounded-2xl bg-surface/90 backdrop-blur-sm border border-border/50 hover:border-primary/30 transition-colors shadow-lg text-left min-w-0">
+                                    <p className="font-semibold text-sm break-words">{payload.message}</p>
 
-                    <div className="mt-3 flex flex-col gap-2">
-                        {(payload.suggestions || []).map(s => {
-                            const isSelected = suggestionChoice === s.question;
+                                    <div className="mt-3 flex flex-col gap-2">
+                                        {(payload.suggestions || []).map(s => {
+                                            const isSelected = suggestionChoice === s.question;
 
-                            return (
-                                <button
-                                    key={s.id}
-                                    type="button"
-                                    disabled
-                                    className={`text-left px-4 py-2 rounded-xl border text-sm font-medium cursor-default
-                                        ${isSelected ? "border-[#08d0c7]" : "border-border/70"}
-                                        bg-surface-light text-text-primary`}
-                                >
-                                    {s.question}
-                                </button>
-                            );
-                        })}
+                                            return (
+                                                <button
+                                                    key={s.id}
+                                                    type="button"
+                                                    disabled
+                                                    className={`text-left px-4 py-2 rounded-xl border text-sm font-medium cursor-default transition-all break-words
+                                                        ${isSelected 
+                                                            ? "border-primary bg-primary/10" 
+                                                            : "border-border/50 bg-surface-light/50"
+                                                        } text-text-primary`}
+                                                >
+                                                    {s.question}
+                                                </button>
+                                            );
+                                        })}
                     </div>
                 </div>
             </div>
@@ -337,104 +399,108 @@ const getMessageAttachments = (msg: ChatMessage): { url: string; title: string; 
     const alignRight = msg.sender === "user";
 
     return (
-        <div key={msg.id} className="mb-4">
+        <div key={msg.id} className="mb-3 max-w-full">
             {/* Message bubble row */}
             <div className={`flex ${alignRight ? "justify-end" : "justify-start"}`}>
                 <div
-                    className={`flex items-start gap-3 max-w-full sm:max-w-[75%] ${
+                    className={`flex items-end gap-2 max-w-full sm:max-w-[75%] min-w-0 ${
                         alignRight ? "flex-row-reverse" : "flex-row"
                     }`}
                 >
                     {/* Avatar */}
                     <div
-                        className={`flex-shrink-0 w-8 h-8 aspect-square rounded-full flex items-center justify-center
-                            ${alignRight ? "bg-primary text-background" : "bg-surface-light text-primary"}`}
+                        className={`flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg
+                            ${alignRight 
+                                ? "bg-primary shadow-md" 
+                                : "bg-gradient-to-br from-surface-light to-surface border border-primary/30"
+                            }`}
                     >
                         {alignRight ? (
-                            <UserCircleIcon className="w-5 h-5" />
+                            <UserCircleIcon className="w-6 h-6 text-background" />
                         ) : (
-                            <BotIcon className="w-5 h-5" />
+                            <BotIcon className="w-6 h-6 text-primary" />
                         )}
                     </div>
 
                     {/* Text bubble */}
                     <div
-                        className={`rounded-2xl px-4 py-3 shadow-sm border
+                        className={`rounded-2xl px-5 py-4 shadow-lg transition-all duration-300 hover:shadow-xl min-w-0 overflow-hidden break-words
                             ${
                                 alignRight
-                                    ? "bg-[#08d0c7] text-[#052231] border-transparent"
-                                    : "bg-surface border-border text-text-primary"
+                                    ? "bg-primary text-background border border-primary/60"
+                                    : "bg-surface/90 backdrop-blur-sm border border-border/50 hover:border-primary/30 text-text-primary"
                             }`}
                     >
                         {/* Text */}
-                        <div className="space-y-1 text-sm sm:text-base">
+                        <div className={`space-y-1 text-sm sm:text-base ${alignRight ? 'font-bold tracking-wide' : ''}`}>
                             {msg.text.split(/\r?\n/).map((line, idx) => {
                                 const trimmed = line.trim();
                                 if (!trimmed) return <div key={idx} className="h-2" />;
 
-                                if (trimmed.startsWith("�?�")) {
+                                if (trimmed.startsWith("•")) {
                                     return (
                                         <ul key={idx} className="list-disc pl-5">
-                                            <li>{renderFormattedText(trimmed.replace(/^�?�\s*/, ""))}</li>
+                                            <li>{renderFormattedText(trimmed.replace(/^•\s*/, ""), alignRight)}</li>
                                         </ul>
                                     );
                                 }
 
                                 return (
                                     <p key={idx} className="whitespace-pre-wrap">
-                                        {renderFormattedText(line)}
+                                        {renderFormattedText(line, alignRight)}
                                     </p>
                                 );
                             })}
                         </div>
 
                         {/* Timestamp */}
-                        <div className="text-xs mt-2 opacity-70 text-right">
+                        <div className={`text-xs mt-2 text-right ${alignRight ? 'text-background/70' : 'text-text-secondary/70'}`}>
                             {new Date(msg.created_at).toLocaleTimeString()}
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Media summary row under the bubble (titles + type only, no links) */}
+            {/* Media summary row under the bubble */}
             {attachments.length > 0 && (
-                <div className={`mt-2 flex ${alignRight ? "justify-end" : "justify-start"}`}>
+                <div className={`mt-2 flex ${alignRight ? "justify-end" : "justify-start"} max-w-full`}>
                     <div
-                        className={`flex items-start gap-2 max-w-full sm:max-w-[75%] ${
+                        className={`flex items-start gap-2 max-w-full sm:max-w-[75%] min-w-0 ${
                             alignRight ? "flex-row-reverse" : ""
                         }`}
                     >
-                        {/* Spacer to align under the bubble; no avatar here */}
-                        <div className="w-8 h-8 flex-shrink-0" />
-                        <div className="rounded-xl bg-surface-light border border-border px-3 py-2 text-xs">
-                            <div className="flex items-center justify-between mb-1">
-                                <span className="text-[10px] font-semibold uppercase text-text-secondary">
+                        {/* Spacer to align under the bubble */}
+                        <div className="w-10 h-10 flex-shrink-0" />
+                        <div className="rounded-xl bg-surface/70 backdrop-blur-sm border border-border/50 px-3 py-2.5 text-xs shadow-md hover:shadow-lg transition-shadow min-w-0 overflow-hidden">
+                            <div className="flex items-center justify-between mb-2 gap-2">
+                                <span className="text-[10px] font-bold uppercase text-primary tracking-wider flex items-center gap-1 flex-shrink-0">
+                                    {attachments.some(a => a.type === 'video') ? <VideoIcon className="w-3 h-3" /> : <ImageIcon className="w-3 h-3" />}
                                     Media
                                 </span>
-                                <span className="text-[10px] text-text-secondary">
-                                    {attachments.length} item{attachments.length !== 1 && "s"}
+                                <span className="text-[10px] text-text-secondary/70 font-semibold flex-shrink-0">
+                                    {attachments.length} {attachments.length !== 1 ? 'items' : 'item'}
                                 </span>
                             </div>
-<ul className="space-y-1">
-  {attachments.map(item => (
-    <li
-      key={item.url}
-      className="flex items-center justify-between gap-2"
-    >
-      <a
-        href={item.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="truncate text-xs text-primary hover:underline"
-      >
-        {item.title}
-      </a>
-      <span className="text-[10px] uppercase opacity-70">
-        {item.type}
-      </span>
-    </li>
-  ))}
-</ul>
+                            <ul className="space-y-1.5">
+                                {attachments.map(item => (
+                                    <li
+                                        key={item.url}
+                                        className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-surface-light/50 transition-colors min-w-0"
+                                    >
+                                        <a
+                                            href={item.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex-1 truncate text-xs text-text-primary hover:text-primary transition-colors font-medium min-w-0"
+                                        >
+                                            {item.title}
+                                        </a>
+                                        <span className="text-[9px] uppercase opacity-60 font-bold px-1.5 py-0.5 bg-primary/10 rounded flex-shrink-0 whitespace-nowrap">
+                                            {item.type}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
                     </div>
                 </div>
@@ -450,10 +516,19 @@ const getMessageAttachments = (msg: ChatMessage): { url: string; title: string; 
                         </div>
                     </>
                 ) : (
-                    <div className="hidden md:flex flex-1 flex-col justify-center items-center text-center text-text-secondary p-8">
-                        <UserCircleIcon className="w-12 h-12"/>
-                        <h2 className="mt-4 text-xl font-semibold">Select a user</h2>
-                        <p>Choose a user from the left panel to view their conversation logs.</p>
+                    <div className="hidden md:flex flex-1 flex-col justify-center items-center text-center p-8">
+                        <div className="relative mb-6">
+                            <div className="absolute inset-0 bg-primary/20 rounded-full blur-3xl animate-pulse"></div>
+                            <div className="relative w-20 h-20 rounded-3xl bg-gradient-to-br from-primary/20 to-secondary/20 border border-primary/30 flex items-center justify-center shadow-glow-primary">
+                                <ChatIcon className="w-10 h-10 text-primary" />
+                            </div>
+                        </div>
+                        <h2 className="text-2xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent mb-2">
+                            Select a User
+                        </h2>
+                        <p className="text-text-secondary/70 max-w-sm">
+                            Choose a user from the left panel to view their conversation history and chat logs.
+                        </p>
                     </div>
                 )}
                 

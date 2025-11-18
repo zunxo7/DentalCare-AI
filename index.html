@@ -18,17 +18,18 @@
               sans: ['Inter', 'sans-serif'],
             },
             colors: {
-              'background': '#0F172A',      // Slate 900
-              'surface': '#1E293B',        // Slate 800
-              'surface-light': '#334155',    // Slate 700
-              'primary': '#2DD4BF',        // Teal 400
-              'primary-hover': '#5EEAD4',    // Teal 300
-              'cyan-400': '#22D3EE',        // Cyan 400 for gradient
-              'accent': '#F43F5E',         // Rose 500
-              'accent-hover': '#FB7185',       // Rose 400
-              'text-primary': '#F1F5F9',      // Slate 100
-              'text-secondary': '#94A3B8',    // Slate 400
-              'border': '#334155',          // Slate 700
+              'background': '#0A0E1A',      // Darker navy
+              'surface': '#151B2E',         // Dark navy
+              'surface-light': '#1E2740',   // Lighter navy
+              'primary': '#06D6A0',         // Vibrant teal
+              'primary-hover': '#1BE9B6',   // Lighter teal
+              'secondary': '#118AB2',       // Blue
+              'accent': '#EF476F',          // Pink
+              'accent-hover': '#FF6B94',    // Light pink
+              'text-primary': '#FEFEFE',    // Almost white
+              'text-secondary': '#8B9DC3',  // Muted blue-gray
+              'border': '#1E2740',          // Border color
+              'glow': '#06D6A0',            // Glow color
             },
             animation: {
                 'fade-in-down': 'fadeInDown 0.3s ease-out forwards',
@@ -45,8 +46,14 @@
                 }
             },
             boxShadow: {
-              'glow-primary': '0 0 20px 0 rgba(45, 212, 191, 0.35)',
-              'glow-primary-lg': '0 0 30px 0 rgba(45, 212, 191, 0.45)',
+              'glow-primary': '0 0 20px 0 rgba(6, 214, 160, 0.4)',
+              'glow-primary-lg': '0 0 30px 0 rgba(6, 214, 160, 0.6)',
+              'glow-accent': '0 0 20px 0 rgba(239, 71, 111, 0.3)',
+              'inner-glow': 'inset 0 0 20px rgba(6, 214, 160, 0.1)',
+            },
+            backgroundImage: {
+              'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
+              'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
             }
           },
         },

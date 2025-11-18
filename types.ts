@@ -37,6 +37,7 @@ export interface User {
 export interface UserWithStats extends User {
   conversation_count: number;
   last_active: string;
+  time_spent?: number;
 }
 
 export interface Conversation {

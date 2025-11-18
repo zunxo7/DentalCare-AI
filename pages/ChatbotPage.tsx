@@ -61,25 +61,31 @@ const UserNameModal: React.FC<{ onSubmit: (name: string) => void; isLoading: boo
     };
 
     return (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-            <div className="bg-surface rounded-2xl shadow-xl p-8 w-full max-w-md border border-border animate-fade-in-up">
-                <h2 className="text-2xl font-bold mb-2 text-text-primary">Welcome to the Assistant</h2>
-                <p className="text-text-secondary mb-6">
-                    Please enter your name to begin. Your conversation history will be saved for future
-                    visits.
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex justify-center items-center p-4">
+            <div className="bg-surface/95 backdrop-blur-sm rounded-3xl shadow-2xl shadow-primary/10 p-10 w-full max-w-md border border-border/50 animate-fade-in-up">
+                <div className="mb-6 flex justify-center">
+                    <div className="bg-gradient-to-br from-primary/20 to-secondary/20 p-4 rounded-2xl border border-primary/30">
+                        <span className="text-4xl">🦷</span>
+                    </div>
+                </div>
+                <h2 className="text-3xl font-extrabold mb-3 text-center bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+                    Welcome!
+                </h2>
+                <p className="text-text-secondary/80 mb-8 text-center leading-relaxed">
+                    Please enter your name to begin. Your conversation history will be saved for future visits.
                 </p>
                 <form onSubmit={handleSubmit}>
                     <input
                         type="text"
                         value={name}
                         onChange={e => setName(e.target.value)}
-                        placeholder="Enter your name"
-                        className="w-full bg-surface-light border border-border rounded-lg py-3 px-4 focus:outline-none focus:ring-2 focus:ring-primary transition-all text-text-primary"
+                        placeholder="Enter your name..."
+                        className="w-full bg-surface-light/50 backdrop-blur-sm border border-border/50 rounded-xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary/50 transition-all text-text-primary placeholder:text-text-secondary/50"
                         autoFocus
                     />
                     <button
                         type="submit"
-                        className="w-full mt-4 bg-primary text-background font-bold py-3 px-4 rounded-lg hover:bg-primary-hover transition-colors disabled:opacity-50 flex justify-center items-center"
+                        className="w-full mt-5 bg-gradient-to-r from-primary to-secondary text-background font-bold py-4 px-4 rounded-xl hover:shadow-glow-primary-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center hover:scale-105"
                         disabled={!name.trim() || isLoading}
                     >
                         {isLoading ? <SpinnerIcon /> : 'Start Chatting'}
@@ -94,35 +100,48 @@ const ChatEmptyState: React.FC<{ onQuestionClick: (question: string) => void }> 
     onQuestionClick,
 }) => {
     const starterQuestions = [
-        'How often will I see the orthodontist?',
-        'What do I do if a bracket or a wire comes loose?',
-        'Do braces cause discomfort?',
-        'How often should I brush?',
+        { icon: "🦷", text: 'How often will I see the orthodontist?' },
+        { icon: "🔧", text: 'What do I do if a bracket or a wire comes loose?' },
+        { icon: "✨", text: 'Do braces cause discomfort?' },
+        { icon: "🪥", text: 'How often should I brush?' },
     ];
 
     return (
         <div
-            className="flex flex-col justify-center items-center 
-    min-h-[calc(100vh-80px)]
-    text-center animate-fade-in-up px-4"
+            className="h-full flex flex-col justify-center items-center text-center px-3 py-2 overflow-hidden"
         >
-            <div className="max-w-3xl w-full">
-                <div className="mb-12">
-                    <h1 className="text-4xl md:text-5xl font-bold text-text-primary">
-                        Welcome to Dental Care
+            <div className="max-w-4xl w-full">
+                <div className="mb-4 sm:mb-6 md:mb-8">
+                    <div className="mb-3 md:mb-4 inline-block">
+                        <div className="relative">
+                            <div className="absolute inset-0 bg-primary/20 rounded-full blur-2xl animate-pulse"></div>
+                            <div className="relative bg-gradient-to-br from-primary/10 to-secondary/10 p-2.5 md:p-4 rounded-2xl md:rounded-3xl border border-primary/30 shadow-glow-primary">
+                                <BotIcon className="w-8 h-8 md:w-12 md:h-12 text-primary" />
+                            </div>
+                        </div>
+                    </div>
+                    <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-extrabold bg-gradient-to-r from-primary via-secondary to-primary bg-clip-text text-transparent mb-1.5 md:mb-2 px-2">
+                        Welcome to DentalCare AI
                     </h1>
-                    <p className="text-lg text-text-secondary mt-4 max-w-xl mx-auto">
-                        Ask me anything about our dental services or procedures.
+                    <p className="text-xs sm:text-sm md:text-base text-text-secondary/80 mt-1.5 md:mt-3 max-w-2xl mx-auto font-medium px-3">
+                        Your intelligent orthodontic assistant is ready to help
                     </p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 md:gap-4 max-w-3xl mx-auto">
                     {starterQuestions.map((q, i) => (
                         <button
                             key={i}
-                            onClick={() => onQuestionClick(q)}
-                            className="text-left p-5 bg-surface rounded-xl border border-border hover:bg-surface-light hover:border-primary transition-all duration-200 text-text-primary"
+                            onClick={() => onQuestionClick(q.text)}
+                            className="group text-left p-2.5 sm:p-3 md:p-4 bg-surface/80 backdrop-blur-sm rounded-xl md:rounded-2xl border border-border hover:border-primary/50 hover:bg-surface transition-all duration-300 hover:shadow-glow-primary active:scale-95 md:hover:-translate-y-1"
                         >
-                            {q}
+                            <div className="flex items-center gap-2.5 sm:gap-3">
+                                <div className="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 md:w-11 md:h-11 bg-gradient-to-br from-primary/20 to-secondary/20 rounded-lg md:rounded-xl flex items-center justify-center text-lg sm:text-xl md:text-2xl group-hover:scale-110 transition-transform duration-300">
+                                    {q.icon}
+                                </div>
+                                <p className="text-text-primary font-medium text-xs sm:text-sm md:text-base leading-snug sm:leading-relaxed">
+                                    {q.text}
+                                </p>
+                            </div>
                         </button>
                     ))}
                 </div>
@@ -459,76 +478,6 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
     const activeConversationTitle = activeConversation?.title || 'New Chat';
     const isMultiLineInput = input.includes('\n');
 
-    const renderFormattedText = (text: string) => {
-        const applyPattern = (
-            inputNodes: React.ReactNode[],
-            regex: RegExp,
-            renderFn: (match: string, key: string) => React.ReactNode,
-        ): React.ReactNode[] => {
-            const output: React.ReactNode[] = [];
-
-            inputNodes.forEach((node, nodeIndex) => {
-                if (typeof node !== 'string') {
-                    output.push(node);
-                    return;
-                }
-
-                const str = node;
-                let lastIndex = 0;
-                let match: RegExpExecArray | null;
-
-                while ((match = regex.exec(str)) !== null) {
-                    if (match.index > lastIndex) {
-                        output.push(str.slice(lastIndex, match.index));
-                    }
-                    const content = match[1];
-                    output.push(renderFn(content, `${nodeIndex}-${match.index}`));
-                    lastIndex = match.index + match[0].length;
-                }
-
-                if (lastIndex < str.length) {
-                    output.push(str.slice(lastIndex));
-                }
-            });
-
-            return output;
-        };
-
-        let nodes: React.ReactNode[] = [text];
-
-        nodes = applyPattern(
-            nodes,
-            /__\*\*(.+?)\*\*__/g,
-            (match, key) => (
-                <span key={`ub-${key}`} className="font-semibold italic underline">
-                    {match}
-                </span>
-            ),
-        );
-
-        nodes = applyPattern(
-            nodes,
-            /\*\*(.+?)\*\*/g,
-            (match, key) => (
-                <span key={`b-${key}`} className="font-semibold">
-                    {match}
-                </span>
-            ),
-        );
-
-        nodes = applyPattern(
-            nodes,
-            /__(.+?)__/g,
-            (match, key) => (
-                <span key={`u-${key}`} className="underline">
-                    {match}
-                </span>
-            ),
-        );
-
-        return nodes;
-    };
-
     const sanitizeMediaText = (text: string, hasMedia: boolean) => {
         if (!hasMedia) return text;
         let cleaned = text;
@@ -557,9 +506,82 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
     };
 
     const renderMessageContent = (message: ChatMessage) => {
+        const isUserMessage = message.sender === 'user';
+        const boldColorClass = isUserMessage ? 'text-background/90' : 'text-primary';
+        
+        const renderFormattedText = (text: string) => {
+            const applyPattern = (
+                inputNodes: React.ReactNode[],
+                regex: RegExp,
+                renderFn: (match: string, key: string) => React.ReactNode,
+            ): React.ReactNode[] => {
+                const output: React.ReactNode[] = [];
+
+                inputNodes.forEach((node, nodeIndex) => {
+                    if (typeof node !== 'string') {
+                        output.push(node);
+                        return;
+                    }
+
+                    const str = node;
+                    let lastIndex = 0;
+                    let match: RegExpExecArray | null;
+
+                    while ((match = regex.exec(str)) !== null) {
+                        if (match.index > lastIndex) {
+                            output.push(str.slice(lastIndex, match.index));
+                        }
+                        const content = match[1];
+                        output.push(renderFn(content, `${nodeIndex}-${match.index}`));
+                        lastIndex = match.index + match[0].length;
+                    }
+
+                    if (lastIndex < str.length) {
+                        output.push(str.slice(lastIndex));
+                    }
+                });
+
+                return output;
+            };
+
+            let nodes: React.ReactNode[] = [text];
+
+            nodes = applyPattern(
+                nodes,
+                /__\*\*(.+?)\*\*__/g,
+                (match, key) => (
+                    <span key={`ub-${key}`} className={`font-bold italic underline tracking-wide ${boldColorClass}`}>
+                        {match}
+                    </span>
+                ),
+            );
+
+            nodes = applyPattern(
+                nodes,
+                /\*\*(.+?)\*\*/g,
+                (match, key) => (
+                    <span key={`b-${key}`} className={`font-bold tracking-wide ${boldColorClass}`}>
+                        {match}
+                    </span>
+                ),
+            );
+
+            nodes = applyPattern(
+                nodes,
+                /__(.+?)__/g,
+                (match, key) => (
+                    <span key={`u-${key}`} className="underline">
+                        {match}
+                    </span>
+                ),
+            );
+
+            return nodes;
+        };
+        
         return (
             <div>
-                <div className="space-y-1 text-sm sm:text-base">
+                <div className={`space-y-1 text-sm sm:text-base ${isUserMessage ? 'font-bold tracking-wide' : ''}`}>
                     {sanitizeMediaText(message.text, !!message.mediaUrls?.length)
                         .split(/\r?\n/)
                         .map((line, idx) => {
@@ -613,11 +635,11 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
     }> = ({ attachments, alignRight, isUser }) => {
         if (attachments.length === 0) return null;
         const bubbleBase = isUser
-            ? 'bg-[#08d0c7] text-[#052231] border border-transparent'
+            ? 'bg-primary text-background border border-primary/60'
             : 'bg-surface text-text-primary border border-border';
-        const detailColor = isUser ? 'text-[#052231]/70' : 'text-text-secondary';
-        const cardBg = isUser ? 'bg-[#07b6ad]' : 'bg-surface-light';
-        const iconColor = isUser ? 'text-[#052231]' : 'text-text-secondary';
+        const detailColor = isUser ? 'text-background/70' : 'text-text-secondary';
+        const cardBg = isUser ? 'bg-primary/90' : 'bg-surface-light';
+        const iconColor = isUser ? 'text-background' : 'text-text-secondary';
 
         return (
             <div
@@ -708,10 +730,11 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                 </div>
                 <button
                     onClick={handleNewChat}
-                    className="p-2 rounded-full bg-primary text-background hover:bg-primary-hover transition-colors"
+                    className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9"
                     title="New chat"
                 >
-                    <PlusIcon className="w-4 h-4" />
+                    <PlusIcon className="w-4 h-4 flex-shrink-0" />
+                    <span className="whitespace-nowrap">New Chat</span>
                 </button>
             </div>
 
@@ -721,17 +744,17 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                         {conversations.map(c => (
                             <li
                                 key={c.id}
-                                className={`group flex items-center justify-between gap-2 rounded-lg px-3 py-2 cursor-pointer transition-colors ${
+                                className={`group flex items-center justify-between gap-2 rounded-lg px-3 py-2 transition-colors ${
                                     activeConversationId === c.id
                                         ? 'bg-primary/10 border border-primary/40'
                                         : 'hover:bg-surface-light border border-transparent'
                                 } ${
-                                    isThinking
+                                    isThinking || isLoading || isConversationLoading
                                         ? 'opacity-60 cursor-not-allowed hover:bg-surface'
-                                        : ''
+                                        : 'cursor-pointer'
                                 }`}
                                 onClick={() => {
-                                    if (isThinking || isConversationLoading) return;
+                                    if (isThinking || isLoading || isConversationLoading) return;
                                     handleSelectConversation(c.id);
                                 }}
                             >
@@ -748,9 +771,11 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                                 <button
                                     onClick={e => {
                                         e.stopPropagation();
+                                        if (isThinking || isLoading || isConversationLoading) return;
                                         handleDeleteConversation(c.id);
                                     }}
-                                    className="p-1 text-text-secondary hover:text-accent opacity-0 group-hover:opacity-100 transition-opacity"
+                                    disabled={isThinking || isLoading || isConversationLoading}
+                                    className="p-1.5 rounded-lg text-text-secondary/70 hover:text-accent hover:bg-accent/10 active:bg-accent/20 transition-all duration-200 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-text-secondary/70 disabled:hover:bg-transparent"
                                 >
                                     <TrashIcon className="w-4 h-4" />
                                 </button>
@@ -790,7 +815,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
             )}
 
             <aside
-                className={`hidden md:flex md:w-80 lg:w-96 xl:w-[380px] md:flex-col ${SIDEBAR_BG}`}
+                className={`hidden md:flex md:w-[280px] lg:w-[320px] xl:w-[340px] md:flex-col ${SIDEBAR_BG}`}
             >
                 <SidebarContent />
             </aside>
@@ -824,7 +849,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                         </h1>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3">
                         <button
                             onClick={() => {
                                 const diagrams = media.filter(
@@ -851,18 +876,15 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                                     index: 0,
                                 });
                             }}
-                            className="bg-primary text-background px-4 py-2.5 rounded-full 
-min-w-[120px] sm:min-w-[140px]
-hover:bg-primary-hover transition-colors 
-flex items-center justify-center gap-2 text-sm font-semibold h-10"
+                            className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9"
                         >
                             <ImageIcon className="w-4 h-4 flex-shrink-0" />
-                            <span className="inline whitespace-nowrap">Diagram</span>
+                            <span className="whitespace-nowrap">Diagram</span>
                         </button>
 
                         <button
                             onClick={() => navigate('/dashboard')}
-                            className="bg-primary text-background px-4 py-2.5 rounded-full hover:bg-primary-hover transition-colors flex items-center justify-center gap-2 text-sm font-semibold sm:min-w-[140px] h-10"
+                            className="bg-surface-light text-text-primary px-3 sm:px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm sm:min-w-[120px] h-9"
                         >
                             <DashboardIcon className="w-4 h-4 flex-shrink-0" />
                             <span className="hidden sm:inline whitespace-nowrap">Dashboard</span>
@@ -871,8 +893,10 @@ flex items-center justify-center gap-2 text-sm font-semibold h-10"
                 </header>
 
                 <div
-                    className={`flex-1 overflow-y-auto custom-scrollbar ${
-                        messages.length > 0 || isLoading ? 'p-4 md:p-6 space-y-6' : ''
+                    className={`flex-1 ${
+                        messages.length > 0 || isLoading 
+                            ? 'overflow-y-auto custom-scrollbar p-4 md:p-6 space-y-6' 
+                            : 'overflow-hidden'
                     }`}
                 >
                     {isConversationLoading && (
@@ -916,30 +940,30 @@ flex items-center justify-center gap-2 text-sm font-semibold h-10"
                                                         }`}
                                                     >
                                                         <div
-                                                            className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                                            className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${
                                                                 alignRight
-                                                                    ? 'bg-primary text-background'
-                                                                    : 'bg-surface-light text-primary'
+                                                                    ? 'bg-primary shadow-md'
+                                                                    : 'bg-gradient-to-br from-surface-light to-surface border border-primary/30'
                                                             }`}
                                                         >
                                                             {alignRight ? (
-                                                                <UserCircleIcon className="w-5 h-5" />
+                                                                <UserCircleIcon className="w-6 h-6 text-background" />
                                                             ) : (
-                                                                <BotIcon className="w-5 h-5" />
+                                                                <BotIcon className="w-6 h-6 text-primary" />
                                                             )}
                                                         </div>
                                                         <div
-                                                            className={`rounded-2xl px-4 py-3 shadow-sm border ${
+                                                            className={`rounded-2xl px-5 py-4 shadow-lg transition-all duration-300 hover:shadow-xl ${
                                                                 alignRight
-                                                                    ? 'bg-[#08d0c7] text-[#052231] border-transparent'
-                                                                    : 'bg-surface border-border'
+                                                                    ? 'bg-primary text-background border border-primary/60'
+                                                                    : 'bg-surface/90 backdrop-blur-sm border border-border/50 hover:border-primary/30'
                                                             }`}
                                                         >
                                                             {renderMessageContent(message)}
                                                             <p
                                                                 className={`text-[11px] mt-1 ${
                                                                     alignRight
-                                                                        ? 'text-[#052231]/70'
+                                                                        ? 'text-background/70'
                                                                         : 'text-text-secondary/70'
                                                                 }`}
                                                             >
@@ -998,13 +1022,14 @@ flex items-center justify-center gap-2 text-sm font-semibold h-10"
                             if (!isConversationLoading) handleSend();
                         }}
                     >
-                        <div className="flex-1 transition-all duration-200">
+                        <div className="flex-1 transition-all duration-300">
                             <div
-                                className={`flex items-center bg-background px-4 py-2 transition-all duration-300 ease-out overflow-hidden border-2 ${
+                                className={`flex items-center bg-background px-4 py-2 transition-all duration-300 ease-in-out overflow-hidden border-2 ${
                                     isInputFocused ? 'border-primary' : 'border-transparent'
                                 }`}
                                 style={{
                                     borderRadius: isMultiLineInput ? 24 : 9999,
+                                    transition: 'border-radius 300ms cubic-bezier(0.4, 0, 0.2, 1), border-color 200ms',
                                 }}
                             >
                                 <textarea
@@ -1015,10 +1040,10 @@ flex items-center justify-center gap-2 text-sm font-semibold h-10"
                                     rows={1}
                                     style={{
                                         height: inputHeight ? `${inputHeight}px` : undefined,
-                                        transition: 'height 220ms ease-in-out',
+                                        transition: 'height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
                                         overflow: 'hidden',
                                     }}
-                                    className="flex-1 bg-transparent border-none outline-none resize-none text-sm md:text-base text-text-primary"
+                                    className="flex-1 bg-transparent border-none outline-none resize-none text-sm md:text-base text-text-primary text-left placeholder:text-left leading-normal"
                                     onFocus={() => setIsInputFocused(true)}
                                     onBlur={() => setIsInputFocused(false)}
                                     onKeyDown={handleTextareaKeyDown}
@@ -1026,7 +1051,12 @@ flex items-center justify-center gap-2 text-sm font-semibold h-10"
                                 <button
                                     type="submit"
                                     disabled={isLoading || isConversationLoading || !input.trim()}
-                                    className="ml-3 inline-flex items-center justify-center rounded-full bg-primary text-background w-11 h-11 hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    className="ml-3 inline-flex items-center justify-center rounded-full 
+                                    bg-gradient-to-br from-primary to-secondary text-background 
+                                    w-11 h-11 shadow-md border border-primary/30
+                                    hover:shadow-lg hover:scale-110 active:scale-95
+                                    disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100
+                                    transition-all duration-300"
                                 >
                                     <SendIcon className="w-5 h-5" />
                                 </button>

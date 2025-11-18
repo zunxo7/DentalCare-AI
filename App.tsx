@@ -154,15 +154,17 @@ const AppContent: React.FC = () => {
                          {!location.pathname.endsWith('/dashboard') && (
                             <button
                                 onClick={() => navigate('/dashboard')}
-                                className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center gap-2 text-sm"
+                                className={`bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm h-9 ${
+                                    location.pathname.includes('/conversations') ? '' : 'lg:min-w-[120px]'
+                                }`}
                             >
-                                <DashboardIcon /> Dashboard
+                                <DashboardIcon className="w-4 h-4 flex-shrink-0" /> <span>Dashboard</span>
                             </button>
                          )}
-                        <button onClick={() => navigate('/dashboard/conversations')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center gap-2 text-sm"><ChatIcon /> Conversations</button>
-                        <button onClick={() => navigate('/dashboard/faqs')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center gap-2 text-sm"><FaqIcon /> FAQs</button>
-                        <button onClick={() => navigate('/dashboard/media')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center gap-2 text-sm"><MediaIcon /> Media</button>
-                        <button onClick={handleLogout} className="bg-accent text-white px-4 py-2 rounded-full hover:bg-accent-hover transition-colors flex items-center gap-2 text-sm font-semibold"><LogoutIcon /> Logout</button>
+                        <button onClick={() => navigate('/dashboard/conversations')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[140px] h-9"><ChatIcon className="w-4 h-4 flex-shrink-0" /> <span>Conversations</span></button>
+                        <button onClick={() => navigate('/dashboard/faqs')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9"><FaqIcon className="w-4 h-4 flex-shrink-0" /> <span>FAQs</span></button>
+                        <button onClick={() => navigate('/dashboard/media')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9"><MediaIcon className="w-4 h-4 flex-shrink-0" /> <span>Media</span></button>
+                        <button onClick={handleLogout} className="bg-accent text-white px-4 py-2 rounded-full hover:bg-accent-hover transition-colors flex items-center justify-center gap-2 text-sm font-semibold min-w-[100px] h-9"><LogoutIcon className="w-4 h-4 flex-shrink-0" /> <span>Logout</span></button>
                     </div>
                     <div className="md:hidden" ref={mobileMenuRef}>
                         <button onClick={() => setIsMobileMenuOpen(prev => !prev)} className="p-2 rounded-full hover:bg-surface-light transition-colors"><MenuIcon /></button>
