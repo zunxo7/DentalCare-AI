@@ -9,12 +9,17 @@ import ManageFaqsPage from './pages/ManageFaqsPage';
 import MediaLibraryPage from './pages/MediaLibraryPage';
 import UserConversationsPage from './pages/UserConversationsPage';
 import AdminLoginPage from './pages/AdminLoginPage';
-import { BackIcon, FaqIcon, LogoutIcon, MediaIcon, ChatIcon, MenuIcon, DashboardIcon, SpinnerIcon } from './components/icons';
+import TablesPage from './pages/debug/TablesPage';
+import LogsPage from './pages/debug/LogsPage';
+import ReportsPage from './pages/debug/ReportsPage';
+import EmbeddingsPage from './pages/debug/EmbeddingsPage';
+import { BackIcon, FaqIcon, LogoutIcon, MediaIcon, ChatIcon, MenuIcon, DashboardIcon, SpinnerIcon, TablesIcon, LogsIcon, ReportsIcon, EmbeddingsIcon } from './components/icons';
 import { api } from './lib/apiClient';
+import { isAdmin, clearAuth } from './lib/auth';
 
 // FIX: Changed JSX.Element to React.ReactElement to resolve "Cannot find namespace 'JSX'" error.
 const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
-    const isAuthenticated = localStorage.getItem('isAdmin') === 'true';
+    const isAuthenticated = isAdmin();
     if (!isAuthenticated) {
         return <Navigate to="/login" replace />;
     }
@@ -49,7 +54,7 @@ const AppContent: React.FC = () => {
     const [media, setMedia] = useState<Media[]>([]);
     const [stats, setStats] = useState<DashboardStats | null>(null);
     const [loading, setLoading] = useState(true);
-    const [isAuthenticated, setIsAuthenticated] = useState(localStorage.getItem('isAdmin') === 'true');
+    const [isAuthenticated, setIsAuthenticated] = useState(isAdmin());
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -102,7 +107,7 @@ const AppContent: React.FC = () => {
     }, []);
 
     const handleLogout = () => {
-        localStorage.removeItem('isAdmin');
+        clearAuth();
         setIsAuthenticated(false);
         // Using window.location.hash directly ensures the URL changes before the next
         // React render cycle. This prevents a race condition where the ProtectedRoute
@@ -121,17 +126,26 @@ const AppContent: React.FC = () => {
     }, [fetchData]);
 
     const isDashboard = location.pathname.startsWith('/dashboard');
+    const isDebugPage = location.pathname.startsWith('/dashboard/debug');
 
     const getPageTitle = () => {
         if (location.pathname.includes('/faqs')) return 'Manage FAQs';
         if (location.pathname.includes('/media')) return 'Media Library';
         if (location.pathname.includes('/conversations')) return 'User Conversations';
+        if (location.pathname.includes('/debug/tables')) return 'Tables';
+        if (location.pathname.includes('/debug/logs')) return 'Logs';
+        if (location.pathname.includes('/debug/reports')) return 'Reports';
+        if (location.pathname.includes('/debug/embeddings')) return 'Embeddings';
         if (location.pathname.includes('/dashboard')) return 'Dashboard';
         return 'Assistant';
     };
     
     const handleBack = () => {
-        navigate('/chat');
+        if (isDebugPage) {
+            navigate('/dashboard');
+        } else {
+            navigate('/chat');
+        }
     };
 
     const handleMobileNav = (path: string) => {
@@ -151,41 +165,124 @@ const AppContent: React.FC = () => {
                         <h1 className="text-xl font-bold text-text-primary">{getPageTitle()}</h1>
                     </div>
                     <div className="hidden md:flex items-center gap-2">
-                         {!location.pathname.endsWith('/dashboard') && (
-                            <button
-                                onClick={() => navigate('/dashboard')}
-                                className={`bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm h-9 ${
-                                    location.pathname.includes('/conversations') ? '' : 'lg:min-w-[120px]'
-                                }`}
-                            >
-                                <DashboardIcon className="w-4 h-4 flex-shrink-0" /> <span>Dashboard</span>
-                            </button>
-                         )}
-                        <button onClick={() => navigate('/dashboard/conversations')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[140px] h-9"><ChatIcon className="w-4 h-4 flex-shrink-0" /> <span>Conversations</span></button>
-                        <button onClick={() => navigate('/dashboard/faqs')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9"><FaqIcon className="w-4 h-4 flex-shrink-0" /> <span>FAQs</span></button>
-                        <button onClick={() => navigate('/dashboard/media')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9"><MediaIcon className="w-4 h-4 flex-shrink-0" /> <span>Media</span></button>
-                        <button onClick={handleLogout} className="bg-accent text-white px-4 py-2 rounded-full hover:bg-accent-hover transition-colors flex items-center justify-center gap-2 text-sm font-semibold min-w-[100px] h-9"><LogoutIcon className="w-4 h-4 flex-shrink-0" /> <span>Logout</span></button>
+                        {isDebugPage ? (
+                            <>
+                                {!location.pathname.endsWith('/dashboard') && (
+                                    <button
+                                        onClick={() => navigate('/dashboard')}
+                                        className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm h-9 lg:min-w-[120px]"
+                                    >
+                                        <DashboardIcon className="w-4 h-4 flex-shrink-0" /> <span>Dashboard</span>
+                                    </button>
+                                )}
+                                <button onClick={() => navigate('/dashboard/debug/tables')} className={`px-4 py-2 rounded-full font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9 ${
+                                  location.pathname.includes('/debug/tables')
+                                    ? 'bg-primary text-background'
+                                    : 'bg-surface-light text-text-primary hover:bg-primary hover:text-background'
+                                }`}>
+                                    <TablesIcon className="w-4 h-4 flex-shrink-0" /> <span>Tables</span>
+                                </button>
+                                <button onClick={() => navigate('/dashboard/debug/logs')} className={`px-4 py-2 rounded-full font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9 ${
+                                  location.pathname.includes('/debug/logs')
+                                    ? 'bg-primary text-background'
+                                    : 'bg-surface-light text-text-primary hover:bg-primary hover:text-background'
+                                }`}>
+                                    <LogsIcon className="w-4 h-4 flex-shrink-0" /> <span>Logs</span>
+                                </button>
+                                <button onClick={() => navigate('/dashboard/debug/reports')} className={`px-4 py-2 rounded-full font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9 ${
+                                  location.pathname.includes('/debug/reports')
+                                    ? 'bg-primary text-background'
+                                    : 'bg-surface-light text-text-primary hover:bg-primary hover:text-background'
+                                }`}>
+                                    <ReportsIcon className="w-4 h-4 flex-shrink-0" /> <span>Reports</span>
+                                </button>
+                                <button onClick={() => navigate('/dashboard/debug/embeddings')} className={`px-4 py-2 rounded-full font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[120px] h-9 ${
+                                  location.pathname.includes('/debug/embeddings')
+                                    ? 'bg-primary text-background'
+                                    : 'bg-surface-light text-text-primary hover:bg-primary hover:text-background'
+                                }`}>
+                                    <EmbeddingsIcon className="w-4 h-4 flex-shrink-0" /> <span>Embeddings</span>
+                                </button>
+                                <button onClick={handleLogout} className="bg-accent text-white px-4 py-2 rounded-full hover:bg-accent-hover transition-colors flex items-center justify-center gap-2 text-sm font-semibold min-w-[100px] h-9"><LogoutIcon className="w-4 h-4 flex-shrink-0" /> <span>Logout</span></button>
+                            </>
+                        ) : (
+                            <>
+                                {!location.pathname.endsWith('/dashboard') && (
+                                    <button
+                                        onClick={() => navigate('/dashboard')}
+                                        className={`bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm h-9 ${
+                                            location.pathname.includes('/conversations') ? '' : 'lg:min-w-[120px]'
+                                        }`}
+                                    >
+                                        <DashboardIcon className="w-4 h-4 flex-shrink-0" /> <span>Dashboard</span>
+                                    </button>
+                                )}
+                                <button onClick={() => navigate('/dashboard/conversations')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[140px] h-9"><ChatIcon className="w-4 h-4 flex-shrink-0" /> <span>Conversations</span></button>
+                                <button onClick={() => navigate('/dashboard/faqs')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9"><FaqIcon className="w-4 h-4 flex-shrink-0" /> <span>FAQs</span></button>
+                                <button onClick={() => navigate('/dashboard/media')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9"><MediaIcon className="w-4 h-4 flex-shrink-0" /> <span>Media</span></button>
+                                <button onClick={handleLogout} className="bg-accent text-white px-4 py-2 rounded-full hover:bg-accent-hover transition-colors flex items-center justify-center gap-2 text-sm font-semibold min-w-[100px] h-9"><LogoutIcon className="w-4 h-4 flex-shrink-0" /> <span>Logout</span></button>
+                            </>
+                        )}
                     </div>
                     <div className="md:hidden" ref={mobileMenuRef}>
                         <button onClick={() => setIsMobileMenuOpen(prev => !prev)} className="p-2 rounded-full hover:bg-surface-light transition-colors"><MenuIcon /></button>
                         {isMobileMenuOpen && (
                             <div className="absolute top-16 right-4 w-56 bg-surface rounded-lg shadow-xl border border-border z-50 animate-fade-in-down">
                                 <ul className="p-2">
-                                    {!location.pathname.endsWith('/dashboard') && (
-                                        <li>
-                                            <button
-                                                onClick={() => handleMobileNav('/dashboard')}
-                                                className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"
-                                            >
-                                                <DashboardIcon /> Dashboard
-                                            </button>
-                                        </li>
+                                    {isDebugPage ? (
+                                        <>
+                                            {!location.pathname.endsWith('/dashboard') && (
+                                                <li>
+                                                    <button
+                                                        onClick={() => handleMobileNav('/dashboard')}
+                                                        className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"
+                                                    >
+                                                        <DashboardIcon /> Dashboard
+                                                    </button>
+                                                </li>
+                                            )}
+                                            <li><button onClick={() => handleMobileNav('/dashboard/debug/tables')} className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
+                                              location.pathname.includes('/debug/tables')
+                                                ? 'bg-primary/20 text-primary'
+                                                : 'hover:bg-surface-light'
+                                            }`}><TablesIcon /> Tables</button></li>
+                                            <li><button onClick={() => handleMobileNav('/dashboard/debug/logs')} className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
+                                              location.pathname.includes('/debug/logs')
+                                                ? 'bg-primary/20 text-primary'
+                                                : 'hover:bg-surface-light'
+                                            }`}><LogsIcon /> Logs</button></li>
+                                            <li><button onClick={() => handleMobileNav('/dashboard/debug/reports')} className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
+                                              location.pathname.includes('/debug/reports')
+                                                ? 'bg-primary/20 text-primary'
+                                                : 'hover:bg-surface-light'
+                                            }`}><ReportsIcon /> Reports</button></li>
+                                            <li><button onClick={() => handleMobileNav('/dashboard/debug/embeddings')} className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
+                                              location.pathname.includes('/debug/embeddings')
+                                                ? 'bg-primary/20 text-primary'
+                                                : 'hover:bg-surface-light'
+                                            }`}><EmbeddingsIcon /> Embeddings</button></li>
+                                            <li className="my-2 border-t border-border"></li>
+                                            <li><button onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light text-accent transition-colors"><LogoutIcon /> Logout</button></li>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {!location.pathname.endsWith('/dashboard') && (
+                                                <li>
+                                                    <button
+                                                        onClick={() => handleMobileNav('/dashboard')}
+                                                        className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"
+                                                    >
+                                                        <DashboardIcon /> Dashboard
+                                                    </button>
+                                                </li>
+                                            )}
+                                            <li><button onClick={() => handleMobileNav('/dashboard/conversations')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><ChatIcon /> Conversations</button></li>
+                                            <li><button onClick={() => handleMobileNav('/dashboard/faqs')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><FaqIcon /> FAQs</button></li>
+                                            <li><button onClick={() => handleMobileNav('/dashboard/media')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><MediaIcon /> Media</button></li>
+                                            <li className="my-2 border-t border-border"></li>
+                                            <li><button onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light text-accent transition-colors"><LogoutIcon /> Logout</button></li>
+                                        </>
                                     )}
-                                    <li><button onClick={() => handleMobileNav('/dashboard/conversations')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><ChatIcon /> Conversations</button></li>
-                                    <li><button onClick={() => handleMobileNav('/dashboard/faqs')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><FaqIcon /> FAQs</button></li>
-                                    <li><button onClick={() => handleMobileNav('/dashboard/media')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><MediaIcon /> Media</button></li>
-                                    <li className="my-2 border-t border-border"></li>
-                                    <li><button onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light text-accent transition-colors"><LogoutIcon /> Logout</button></li>
                                 </ul>
                             </div>
                         )}
@@ -208,6 +305,11 @@ const AppContent: React.FC = () => {
                     <Route path="/dashboard/faqs" element={<ProtectedRoute><ManageFaqsPage faqs={faqs} refreshData={fetchData} loading={loading} showToast={showToast} /></ProtectedRoute>} />
                     <Route path="/dashboard/media" element={<ProtectedRoute><MediaLibraryPage media={media} refreshData={fetchData} loading={loading} showToast={showToast} /></ProtectedRoute>} />
                     <Route path="/dashboard/conversations" element={<ProtectedRoute><UserConversationsPage /></ProtectedRoute>} />
+                    <Route path="/dashboard/debug/tables" element={<ProtectedRoute><TablesPage showToast={showToast} /></ProtectedRoute>} />
+                    <Route path="/dashboard/debug/logs" element={<ProtectedRoute><LogsPage showToast={showToast} /></ProtectedRoute>} />
+                    <Route path="/dashboard/debug/reports" element={<ProtectedRoute><ReportsPage showToast={showToast} /></ProtectedRoute>} />
+                    <Route path="/dashboard/debug/embeddings" element={<ProtectedRoute><EmbeddingsPage showToast={showToast} /></ProtectedRoute>} />
+                    <Route path="/dashboard/debug" element={<Navigate to="/dashboard/debug/tables" replace />} />
                     <Route path="/" element={<Navigate to="/chat" replace />} />
                     <Route path="*" element={<Navigate to="/chat" replace />} />
                 </Routes>

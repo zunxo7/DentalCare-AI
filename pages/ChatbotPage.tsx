@@ -10,6 +10,8 @@ import { useNavigate } from 'react-router-dom';
 import type { ChatMessage, FAQ, Media, Conversation, User } from '../types';
 import { getBotResponse } from '../services/botService';
 import { api } from '../lib/apiClient';
+import { isAdmin, updateUserInfo, getCurrentUserId, getCurrentUserName, clearAuth } from '../lib/auth';
+import { debugFetch } from '../lib/debugApi';
 import {
     BotIcon,
     SendIcon,
@@ -21,6 +23,7 @@ import {
     TrashIcon,
     SpinnerIcon,
     MenuIcon,
+    FlagIcon,
 } from '../components/icons';
 
 const SIDEBAR_BG = 'bg-[#1A1F2E] border-[#08101a]';
@@ -166,6 +169,10 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
     const [isThinking, setIsThinking] = useState(false);
     const [activeMediaPreview, setActiveMediaPreview] = useState<MediaPreviewState | null>(null);
     const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+    const [reportModalOpen, setReportModalOpen] = useState(false);
+    const [reportingMessage, setReportingMessage] = useState<ChatMessage | null>(null);
+    const [userQueryForReport, setUserQueryForReport] = useState<string>('');
+    const [reportCategories, setReportCategories] = useState<string[]>([]);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -292,6 +299,20 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
             const userInput = messageText || input;
             if (userInput.trim() === '' || isLoading || !currentUser) return;
 
+            // Check for /debug command
+            if (userInput.trim().toLowerCase() === '/debug') {
+                if (isAdmin()) {
+                    navigate('/dashboard/debug/tables');
+                } else {
+                    // Not admin - redirect to login with return path
+                    navigate('/login?redirect=/dashboard/debug/tables');
+                }
+                if (!messageText) {
+                    setInput('');
+                }
+                return;
+            }
+
             if (!messageText) {
                 setInput('');
             }
@@ -343,7 +364,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                 setIsThinking(true);
 
                 // ⬇️ Backend now does ALL matching + media selection
-                const botResponse = await getBotResponse(userInput, currentUser.name, faqs, media);
+                const botResponse = await getBotResponse(userInput, currentUser.name, faqs, media, currentUser.id);
 
                 if (botResponse.faqId) {
                     incrementFaqCount(botResponse.faqId);
@@ -355,6 +376,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                     sender: 'bot' as const,
                     text: botResponse.text,
                     mediaUrls,
+                    queryId: botResponse.queryId,
                 };
                 console.log('[BOT_RESPONSE]', {
                     question: userInput,
@@ -391,32 +413,104 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
             isConversationLoading,
             messages.length,
             showToast,
+            navigate,
+            messages,
+            faqs,
+            media,
         ],
     );
 
     useEffect(() => {
         const checkUserSession = async () => {
-            const userId = localStorage.getItem('ortho_user_id');
-            if (userId) {
-                try {
-                    const user = await api.getUser(userId);
-                    if (user) {
-                        setCurrentUser(user);
-                        loadConversations(user);
-                    } else {
-                        localStorage.removeItem('ortho_user_id');
-                        setIsNameModalOpen(true);
+            // Clean up legacy keys
+            localStorage.removeItem('ortho_user_id');
+            localStorage.removeItem('ortho_chat_user_name');
+            localStorage.removeItem('isAdmin');
+            localStorage.removeItem('ortho_chat_conversations');
+            
+            // Check localStorage directly
+            const authData = localStorage.getItem('dentalcare_auth');
+            if (!authData) {
+                setIsNameModalOpen(true);
+                return;
+            }
+            
+            try {
+                const auth = JSON.parse(authData);
+                const userId = auth.userId;
+                const userName = auth.userName;
+                
+                // If no userId/userName, show modal (even if admin)
+                if (!userId || !userName) {
+                    setIsNameModalOpen(true);
+                    return;
+                }
+                
+                // Verify with server
+                const user = await api.getUser(String(userId));
+                if (user) {
+                    setCurrentUser(user);
+                    updateUserInfo(user.id, user.name);
+                    
+                    // Log login only once per session
+                    const sessionLoginKey = `session_login_${user.id}`;
+                    if (!sessionStorage.getItem(sessionLoginKey)) {
+                        sessionStorage.setItem(sessionLoginKey, 'true');
+                        fetch('/api/debug/log', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                message: `[USER] Logged in: ${user.name} (${user.id})`,
+                                userId: user.id,
+                                queryId: null,
+                            }),
+                        }).catch(() => {});
                     }
-                } catch {
-                    localStorage.removeItem('ortho_user_id');
+                    
+                    loadConversations(user);
+                } else {
+                    clearAuth();
                     setIsNameModalOpen(true);
                 }
-            } else {
-                setIsNameModalOpen(true);
+            } catch (error: any) {
+                // If 404, user doesn't exist - clear auth
+                if (error.message?.includes('404') || error.message?.includes('not found')) {
+                    clearAuth();
+                    setIsNameModalOpen(true);
+                } else {
+                    // Other errors - show modal
+                    setIsNameModalOpen(true);
+                }
             }
         };
         checkUserSession();
     }, [loadConversations]);
+    
+
+    useEffect(() => {
+        const fetchReportCategories = async () => {
+            // Only fetch report categories if user is admin
+            if (!isAdmin()) {
+                return;
+            }
+            try {
+                const response = await debugFetch('/api/debug/report-categories');
+                const data = await response.json();
+                if (data.success) {
+                    // Extract just the category names, sorted by order
+                    const categoryNames = data.categories
+                        .sort((a: any, b: any) => a.order - b.order)
+                        .map((c: any) => c.name);
+                    setReportCategories(categoryNames);
+                }
+            } catch (error) {
+                console.error('Error fetching report categories:', error);
+                // Fallback to default categories
+                setReportCategories(['answer_irrelevant', 'media_irrelevant', 'inappropriate']);
+            }
+        };
+        fetchReportCategories();
+    }, [isAdmin]);
 
     const handleDeleteConversation = async (id: number) => {
         const originalConversations = [...conversations];
@@ -447,8 +541,29 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
         setIsCreatingUser(true);
         try {
             const newUser = await api.createUser(name);
-            localStorage.setItem('ortho_user_id', newUser.id);
+            // Clean up legacy keys
+            localStorage.removeItem('ortho_user_id');
+            localStorage.removeItem('ortho_chat_user_name');
+            localStorage.removeItem('isAdmin');
+            localStorage.removeItem('ortho_chat_conversations');
+            // Save to auth system only
+            updateUserInfo(newUser.id, newUser.name);
             setCurrentUser(newUser);
+            
+            // Log new user signup (only once per session)
+            const sessionSignupKey = `session_signup_${newUser.id}`;
+            if (!sessionStorage.getItem(sessionSignupKey)) {
+                sessionStorage.setItem(sessionSignupKey, 'true');
+                fetch('/api/debug/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `[USER] Signed up: ${newUser.name} (${newUser.id})`,
+                        userId: newUser.id,
+                        queryId: null,
+                    }),
+                }).catch(() => {});
+            }
         } catch (error: any) {
             showToast(
                 `Could not create user: ${error.message || 'Unknown error'}`,
@@ -502,6 +617,39 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
             return null;
         } catch {
             return null;
+        }
+    };
+
+    const handleReportClick = (message: ChatMessage) => {
+        // Find the user message that preceded this bot message
+        const messageIndex = messages.findIndex(m => m.id === message.id);
+        const userMessage = messageIndex > 0 ? messages[messageIndex - 1] : null;
+        setUserQueryForReport(userMessage?.text || '');
+        setReportingMessage(message);
+        setReportModalOpen(true);
+    };
+
+    const handleSubmitReport = async (reportType: string) => {
+        if (!reportingMessage || !currentUser) return;
+
+        // Only use messageId if it's a valid integer (from database)
+        // Temporary IDs from Date.now() + Math.random() are floats and should be null
+        const messageId = Number.isInteger(reportingMessage.id) && reportingMessage.id > 0 
+            ? reportingMessage.id 
+            : null;
+
+        try {
+            await api.createReport({
+                userId: currentUser.id,
+                queryId: reportingMessage.queryId || null,
+                reportType,
+            });
+            showToast('Report submitted successfully', 'success');
+            setReportModalOpen(false);
+            setReportingMessage(null);
+            setUserQueryForReport('');
+        } catch (error: any) {
+            showToast(`Failed to submit report: ${error.message}`, 'error');
         }
     };
 
@@ -855,11 +1003,9 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                                 const diagrams = media.filter(
                                     m =>
                                         m.type === 'image' &&
-                                        m.keywords?.some(kw =>
-                                            ['diagram', 'parts of braces', 'braces parts', 'orthodontics'].includes(
-                                                kw.toLowerCase(),
-                                            ),
-                                        ),
+                                        (m.title.toLowerCase().includes('diagram') ||
+                                         m.title.toLowerCase().includes('parts') ||
+                                         m.title.toLowerCase().includes('explanation')),
                                 );
 
                                 if (diagrams.length < 1) {
@@ -970,6 +1116,15 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                                                                 {message.timestamp}
                                                             </p>
                                                         </div>
+                                                        {!alignRight && (
+                                                            <button
+                                                                onClick={() => handleReportClick(message)}
+                                                                className="p-1.5 rounded hover:bg-surface/50 transition-colors flex-shrink-0"
+                                                                title="Report message"
+                                                            >
+                                                                <FlagIcon className="w-4 h-4 text-text-secondary/60 hover:text-primary" />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                                 {attachments.length > 0 && (
@@ -1167,6 +1322,54 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                                 </button>
                             </div>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Report Modal */}
+            {reportModalOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+                    onClick={() => {
+                        setReportModalOpen(false);
+                        setReportingMessage(null);
+                        setUserQueryForReport('');
+                    }}
+                >
+                    <div
+                        className="max-w-md w-full rounded-2xl bg-surface border border-border shadow-2xl p-6"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <h3 className="text-xl font-bold text-text-primary mb-4">Report Message</h3>
+                        <p className="text-sm text-text-secondary mb-4">
+                            Why are you reporting this message?
+                        </p>
+                        <div className="space-y-2 mb-4">
+                            {reportCategories.map((category) => {
+                                const label = category.split('_').map(word => 
+                                    word.charAt(0).toUpperCase() + word.slice(1)
+                                ).join(' ');
+                                return (
+                                    <button
+                                        key={category}
+                                        onClick={() => handleSubmitReport(category)}
+                                        className="w-full px-4 py-2 rounded-lg bg-surface-light hover:bg-primary/10 border border-border hover:border-primary/50 text-text-primary font-semibold transition-colors"
+                                    >
+                                        {label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <button
+                            onClick={() => {
+                                setReportModalOpen(false);
+                                setReportingMessage(null);
+                                setUserQueryForReport('');
+                            }}
+                            className="w-full px-4 py-2 rounded-lg bg-surface-light hover:bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors"
+                        >
+                            Cancel
+                        </button>
                     </div>
                 </div>
             )}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { LockIcon } from '../components/icons';
+import { setAdminStatus, isAdmin } from '../lib/auth';
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD;
 
@@ -13,13 +14,22 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }) => {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const navigate = useNavigate();
+    const location = useLocation();
+
+    // Get redirect path from query parameter
+    const getRedirectPath = () => {
+        const searchParams = new URLSearchParams(location.search);
+        const redirect = searchParams.get('redirect');
+        return redirect || '/dashboard';
+    };
 
     useEffect(() => {
-        // If the user is already logged in, redirect them away from the login page.
-        if (localStorage.getItem('isAdmin') === 'true') {
-            navigate('/dashboard', { replace: true });
+        // If the user is already logged in, redirect them to the intended destination
+        if (isAdmin()) {
+            const redirectPath = getRedirectPath();
+            navigate(redirectPath, { replace: true });
         }
-    }, [navigate]);
+    }, [navigate, location]);
 
     const handleLogin = (e: React.FormEvent) => {
         e.preventDefault();
@@ -28,9 +38,35 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }) => {
 
         setTimeout(() => {
             if (password === ADMIN_PASSWORD) {
-                localStorage.setItem('isAdmin', 'true');
+                setAdminStatus(true);
+                
+                // Get user info if available
+                const authData = localStorage.getItem('dentalcare_auth');
+                let userId = null;
+                let userName = null;
+                if (authData) {
+                    try {
+                        const auth = JSON.parse(authData);
+                        userId = auth.userId;
+                        userName = auth.userName;
+                    } catch {}
+                }
+                
+                // Log admin login
+                fetch('/api/debug/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `[ADMIN] Admin logged in${userId ? `: ${userName} (${userId})` : ''}`,
+                        userId: userId || null,
+                        queryId: null,
+                    }),
+                }).catch(() => {});
+                
                 onLoginSuccess();
-                navigate('/dashboard', { replace: true });
+                // Navigate to redirect path or default to dashboard
+                const redirectPath = getRedirectPath();
+                navigate(redirectPath, { replace: true });
             } else {
                 setError('Incorrect password. Please try again.');
             }

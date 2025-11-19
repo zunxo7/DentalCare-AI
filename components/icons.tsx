@@ -154,3 +154,57 @@ export const MenuIcon = (props: React.SVGProps<SVGSVGElement>) => (
       <path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 6l16 0" /><path d="M4 12l16 0" /><path d="M4 18l16 0" />
     </svg>
 );
+
+export const CopyIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg {...iconProps} className="w-5 h-5" viewBox="0 0 24 24" {...props}>
+        <path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M8 8m0 2a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2z" /><path d="M16 8v-2a2 2 0 0 0 -2 -2h-8a2 2 0 0 0 -2 2v8a2 2 0 0 0 2 2h2" />
+    </svg>
+);
+
+export const FlagIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg {...iconProps} className="w-4 h-4" viewBox="0 0 24 24" {...props}>
+        <path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 5a5 5 0 0 1 7 0a5 5 0 0 0 7 0v9a5 5 0 0 1 -7 0a5 5 0 0 0 -7 0v-9z" /><path d="M5 21v-7" />
+    </svg>
+);
+
+export const ArrowUpIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg {...iconProps} className="w-4 h-4" viewBox="0 0 24 24" {...props}>
+        <path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 5l0 14" /><path d="M18 11l-6 -6" /><path d="M6 11l6 -6" />
+    </svg>
+);
+
+export const ArrowDownIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg {...iconProps} className="w-4 h-4" viewBox="0 0 24 24" {...props}>
+        <path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 5l0 14" /><path d="M18 13l-6 6" /><path d="M6 13l6 6" />
+    </svg>
+);
+
+export const RefreshIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg {...iconProps} className="w-5 h-5" viewBox="0 0 24 24" {...props}>
+        <path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-2.5 8a8.1 8.1 0 0 0 15.5 2" /><path d="M4 13v-4h-4" /><path d="M4 17h4v-4" /><path d="M20 13v4h4" /><path d="M20 9h-4v4" />
+    </svg>
+);
+
+export const TablesIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg {...iconProps} className="w-4 h-4" viewBox="0 0 24 24" {...props}>
+        <path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 3h18v18h-18z" /><path d="M3 9h18" /><path d="M9 3v18" />
+    </svg>
+);
+
+export const LogsIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg {...iconProps} className="w-4 h-4" viewBox="0 0 24 24" {...props}>
+        <path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 5m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" /><path d="M4 10h16" /><path d="M10 4v16" />
+    </svg>
+);
+
+export const ReportsIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg {...iconProps} className="w-4 h-4" viewBox="0 0 24 24" {...props}>
+        <path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 3m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v0a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z" /><path d="M9 12l6 0" /><path d="M9 16l6 0" />
+    </svg>
+);
+
+export const EmbeddingsIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg {...iconProps} className="w-4 h-4" viewBox="0 0 24 24" {...props}>
+        <path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a9 9 0 0 0 -9 9a9 9 0 0 0 9 9a9 9 0 0 0 9 -9a9 9 0 0 0 -9 -9z" /><path d="M12 8l0 8" /><path d="M8 12l8 0" />
+    </svg>
+);

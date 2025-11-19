@@ -163,7 +163,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ faqs, stats, loading, ref
             await api.resetAllUserData();
 
             // Clear user session data from any client browsers
+            // Clean up all legacy keys
             localStorage.removeItem('ortho_user_id');
+            localStorage.removeItem('ortho_chat_user_name');
+            localStorage.removeItem('isAdmin');
+            localStorage.removeItem('ortho_chat_conversations');
+            // Clear auth system data
+            const { clearAuth } = await import('../lib/auth');
+            clearAuth();
 
             showToast("All user data has been successfully reset.", "success");
             refreshData(); // Refresh the stats on the dashboard

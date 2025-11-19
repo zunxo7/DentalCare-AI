@@ -1,4 +1,4 @@
-// server/botService.ts (streamlined & optimized)
+// server/botService.ts — CLEAN FIXED VERSION
 
 import OpenAI from "openai";
 import type { FAQ, Media } from "../types";
@@ -7,425 +7,384 @@ export interface BotResponse {
   text: string;
   mediaUrls: string[];
   faqId: number | null;
+  queryId: string | null;
 }
 
-// -------------------- OPENAI CLIENT (BACKEND) --------------------
+// -------------------- LOGGING HELPER --------------------
+function logToServer(level: 'log' | 'error' | 'warn' | 'info', message: string, queryId: string | null, userId?: string | null) {
+  // Log to console immediately
+  console[level === 'log' ? 'log' : level](message);
+  
+  // Send to server asynchronously (don't wait, don't block)
+  fetch('/api/debug/log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, queryId, userId: userId || null }),
+  }).catch(() => {
+    // Silently fail if server is unavailable
+  });
+}
 
+// -------------------- OPENAI CLIENT --------------------
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
-  dangerouslyAllowBrowser: true
+  dangerouslyAllowBrowser: true,
 });
 
 // -------------------- EMBEDDINGS --------------------
-
-async function fetchEmbeddingSmall(text: string): Promise<number[]> {
+async function embed(text: string): Promise<number[]> {
   try {
-    const res: any = await openai.embeddings.create({
+    const out = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: text,
     });
-
-    const first = res?.data?.[0];
-    if (first && Array.isArray(first.embedding)) return first.embedding;
-    if (res?.data?.[0]?.embedding) return res.data[0].embedding;
-  } catch (err) {
-    console.error("❌ Embedding error:", err);
+    return out.data[0]?.embedding ?? [];
+  } catch {
+    return [];
   }
-  return [];
 }
 
-function cosineSimilarity(a: number[], b: number[]): number {
-  if (!a.length || !b.length) return 0;
+function cosine(a: number[], b: number[]) {
+  let dot = 0, na = 0, nb = 0;
   const n = Math.min(a.length, b.length);
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
   for (let i = 0; i < n; i++) {
     dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
+    na += a[i] ** 2;
+    nb += b[i] ** 2;
   }
-  if (na === 0 || nb === 0) return 0;
-  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+  return na && nb ? dot / (Math.sqrt(na) * Math.sqrt(nb)) : 0;
 }
 
-// -------------------- TEXT NORMALIZATION / TOKENS --------------------
-
-const normalizeForSimilarity = (text: string): string =>
-  text
-    .toLowerCase()
-    .replace(/[^a-z0-9\u0600-\u06FF\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const toTokenSet = (text: string) =>
-  new Set<string>(text.split(/\s+/).filter(Boolean));
-
-function similarityScore(a: string, b: string): number {
-  const A = toTokenSet(normalizeForSimilarity(a));
-  const B = toTokenSet(normalizeForSimilarity(b));
-  if (A.size === 0 || B.size === 0) return 0;
-  let inter = 0;
-  for (const t of A) if (B.has(t)) inter++;
-  return inter / Math.max(A.size, B.size);
-}
-
-const STOPWORDS = new Set([
+// -------------------- NORMALIZATION --------------------
+const STOP = new Set([
   "how","what","why","when","where","who","does","do","did",
   "is","are","can","could","should","the","a","an","of",
   "in","on","for","with","to","from","about","your","my","me",
-  "you","i","teeth","tooth","dental","orthodontic","clinic","braces",
+  "you","i"
 ]);
 
-function extractContentTokens(text: string): string[] {
-  const norm = normalizeForSimilarity(text);
-  return norm.split(/\s+/).filter((t) => t && !STOPWORDS.has(t));
+function normalize(t: string) {
+  return t.toLowerCase()
+    .replace(/[^a-z0-9\u0600-\u06FF\s]/g, " ")
+    .replace(/\s+/g, " ").trim();
 }
 
-function keywordOverlapScore(
-  queryTokens: string[],
-  keywordList: string[] | undefined | null
-): number {
-  if (!keywordList || keywordList.length === 0 || queryTokens.length === 0)
-    return 0;
-
-  const querySet = new Set(queryTokens);
-
-  const keywordSet = new Set(
-    keywordList
-      .map((k) => normalizeForSimilarity(k))
-      .join(" ")
-      .split(/\s+/)
-      .filter((t) => t && !STOPWORDS.has(t))
-  );
-
-  if (keywordSet.size === 0) return 0;
-
-  let inter = 0;
-  for (const k of keywordSet) if (querySet.has(k)) inter++;
-
-  return inter / keywordSet.size; // 0..1
+function tokens(t: string) {
+  return normalize(t).split(" ").filter(x => x && !STOP.has(x));
 }
 
-// -------------------- MAIN BOT LOGIC --------------------
 
-export const getBotResponse = async (
-  userMessage: string,
+// -------------------- MAIN --------------------
+export async function getBotResponse(
+  msg: string,
   userName: string,
   faqs: FAQ[],
-  media: Media[]
-): Promise<BotResponse> => {
-  console.log("\n🔍 Query:", userMessage.substring(0, 80) + (userMessage.length > 80 ? "..." : ""));
-  
-  const trimmed = userMessage.trim();
+  media: Media[],
+  userId?: string | null
+): Promise<BotResponse> {
+  // Generate unique query ID for this query session
+  const queryId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+  // Collect all FAQ information for single log entry
+  const faqLogData: any = {
+    query: msg.trim(),
+    language: null,
+    queryType: null,
+    englishQuery: null,
+    queryTokens: null,
+    top3FAQs: [],
+    selectedFAQ: null,
+    selectedFAQReason: null,
+    mediaIds: [],
+    mediaTitles: [],
+    answer: null,
+    translated: false,
+  };
+
+  const trimmed = msg.trim();
   if (!trimmed) {
-    return {
-      text: "براہ کرم اپنا سوال واضح الفاظ میں لکھیں تاکہ میں بہتر مدد کر سکوں۔",
+    return { text: "براہ کرم اپنا سوال واضح طریقے سے لکھیں۔", mediaUrls: [], faqId: null, queryId: queryId };
+  }
+
+  // ---------------- LAYER 1: LANGUAGE + TYPE ---------------- 
+  let lang = "english";
+  let type = "orthodontic";
+
+  try {
+    const detect = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `
+Return ONLY this JSON:
+{"language":"english"|"urdu"|"roman",
+ "type":"greeting"|"bot_name"|"user_name"|"orthodontic"|"irrelevant"}
+
+Rules:
+- ANY question about teeth, brushing, cleaning, flossing, wax, wires, brackets,
+  retainers, rubber bands, aligners, pain, poking wires, brushing frequency,
+  dental hygiene, or braces adjustments MUST be labeled "orthodontic".
+- Treat brushing as orthodontic.
+- Treat wax/poking wire as orthodontic.
+- Treat “how often do I brush” as orthodontic.
+- Treat “how do I use wax” as orthodontic.
+
+Roman Urdu words:
+kitne, kaise, karte, hai, chahiye, baar, din, mai, mein, aap, kyu, kya, ko, ki, ke, par, pe, se, tak, liye, dena, deni, jab, jis, yeh, ye, wo, agar, lekin, aur.
+`
+        },
+        { role: "user", content: trimmed },
+      ],
+    });
+
+    const parsed = JSON.parse(detect.choices[0].message.content);
+
+    lang = parsed.language;
+    type = parsed.type;
+
+    faqLogData.language = lang;
+    faqLogData.queryType = type;
+
+  } catch {}
+
+  // EARLY RETURNS
+  if (type === "greeting") {
+    const response = {
+      text: lang === "english"
+        ? "Hello! How can I help you with braces today?"
+        : lang === "urdu"
+        ? "ہیلو! میں بریسز کے متعلق کیسے مدد کر سکتا ہوں؟"
+        : "Hello! Main braces ke baare mein kaise madad karoon?",
       mediaUrls: [],
       faqId: null,
+      queryId: queryId,
     };
+    faqLogData.answer = response.text;
+    faqLogData.selectedFAQ = null;
+    logToServer('log', `[FAQ] ${JSON.stringify(faqLogData)}`, queryId, userId);
+    return response;
   }
 
-  // Language detection
-  const rawLower = userMessage.toLowerCase();
-  const isUrduScript = /[اأإآبتثجحخدذرزسشصضطظعغفقكلمنهوىي]/.test(rawLower);
-  
-  // Roman Urdu keywords (actual Urdu transliterations only, not English words)
-  const romanUrduKeywords = /\b(kaise|kese|kaisay|kaisey|kartay|karte|karein|karen|karna|karo|hai|hain|hoon|ho|aap|aapko|kya|kyu|kyun|kyunke|kis|kiun|daant|dant|kitni|kitne|dafa|dafah|baar|kab|kabhi|khana|khane|mein|main|ko|ka|ki|ke|saath|sath|par|pe|se|tak|liye|dena|deni|chahiye|chahie|jab|jis|yeh|ye|wo|woh|agar|lekin|aur)\b/i;
-  
-  // Count Roman Urdu matches vs English words
-  const romanUrduMatches = (rawLower.match(romanUrduKeywords) || []).length;
-  const totalWords = rawLower.split(/\s+/).length;
-  
-  // Only consider Roman Urdu if at least 30% of words are Roman Urdu keywords
-  const isRomanUrdu = romanUrduMatches > 0 && (romanUrduMatches / totalWords) >= 0.3;
+  if (type === "bot_name") {
+    const response = {
+      text: lang === "english"
+        ? "My name is DentalClinic AI."
+        : lang === "urdu"
+        ? "میرا نام DentalClinic AI ہے۔"
+        : "Mera naam DentalClinic AI hai.",
+      mediaUrls: [],
+      faqId: null,
+      queryId: queryId,
+    };
+    faqLogData.answer = response.text;
+    faqLogData.selectedFAQ = null;
+    logToServer('log', `[FAQ] ${JSON.stringify(faqLogData)}`, queryId, userId);
+    return response;
+  }
 
-  let detectedLang: "english" | "urdu" | "roman" = "english";
-  if (isUrduScript) detectedLang = "urdu";
-  else if (isRomanUrdu) detectedLang = "roman";
-  
-  console.log("🌍 Language detected:", detectedLang === "english" ? "English" : detectedLang === "urdu" ? "Urdu (script)" : "Roman Urdu");
+  if (type === "user_name") {
+    const response = {
+      text: `Your name is ${userName}.`,
+      mediaUrls: [],
+      faqId: null,
+      queryId: queryId,
+    };
+    faqLogData.answer = response.text;
+    faqLogData.selectedFAQ = null;
+    logToServer('log', `[FAQ] ${JSON.stringify(faqLogData)}`, queryId, userId);
+    return response;
+  }
 
-  const queryTokens = extractContentTokens(trimmed);
-  console.log("📝 Query tokens:", queryTokens.join(", "));
+  if (type === "irrelevant") {
+    const response = {
+      text:
+        lang === "english"
+          ? "I can only answer orthodontic questions — such as braces care, brushing, wax, poking wires, aligners, pain, food restrictions, and dental hygiene. Please ask something related to orthodontics."
+          : lang === "urdu"
+          ? "میں صرف آرتھو ڈونٹکس سے متعلق سوالات کا جواب دے سکتا ہوں — جیسے بریسز کی دیکھ بھال، برش کرنا، ویکس لگانا، چبھتی ہوئی تار، الائنرز، درد، کھانے کی پابندیاں اور دانتوں کی صفائی۔ براہ کرم آرتھوڈونٹکس سے متعلق سوال پوچھیں۔"
+          : "Main sirf orthodontic sawalat ka jawab de sakta hoon — jaise braces care, brushing, wax, poking wire, aligners, pain, food restrictions aur dental hygiene. Barah-e-karam orthodontics se related sawal poochain.",
+      mediaUrls: [],
+      faqId: null,
+      queryId: queryId,
+    };
+    faqLogData.answer = response.text;
+    faqLogData.selectedFAQ = null;
+    logToServer('log', `[FAQ] ${JSON.stringify(faqLogData)}`, queryId, userId);
+    return response;
+  }  
 
-  const SIGNIFICANT_BASE = detectedLang === "english" ? 0.25 : 0.15;
-  
-  // Detect question type
-  const queryLower = trimmed.toLowerCase();
-  const isWhatQuestion = /what (does|is|are)|function of|purpose of/i.test(queryLower);
-  const isProblemQuestion = /pok|sharp|hurt|pain|fix|problem|issue/i.test(queryLower);
-  
-  // For very short queries, require higher threshold
-  const wordCount = trimmed.split(/\s+/).length;
-  const MIN_SCORE_THRESHOLD = wordCount < 3 ? 0.35 : (detectedLang === "english" ? 0.3 : 0.2);
+  // ---------------- LAYER 1B: TRANSLATION TO ENGLISH ---------------- 
+  let englishQuery = trimmed;
 
-  // User embedding (only one call)
-  const userEmbed = await fetchEmbeddingSmall(trimmed);
+  if (lang !== "english") {
+    const t = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "Translate to English only." },
+        { role: "user", content: trimmed },
+      ],
+    });
+    englishQuery = t.choices[0].message.content.trim();
+    faqLogData.englishQuery = englishQuery;
+    faqLogData.translated = true;
+  } else {
+    faqLogData.englishQuery = trimmed;
+    faqLogData.translated = false;
+  }
 
-  // FAQ scoring
-  const scoredFaqs = faqs.map((faq) => {
-    const faqEmbed: number[] =
-      (faq as any).embedding ?? (faq as any).embeddings ?? [];
+  // ---------------- LAYER 2: FAQ HYBRID RANKING ---------------- 
+  const queryEmbed = await embed(englishQuery);
+  const qTokens = tokens(englishQuery);
 
-    const embScore =
-      userEmbed.length && faqEmbed.length
-        ? cosineSimilarity(userEmbed, faqEmbed)
-        : 0;
+  faqLogData.queryTokens = qTokens;
 
-    const lexScore = similarityScore(trimmed, faq.question);
-    const kwScore = keywordOverlapScore(queryTokens, (faq as any).keywords);
-
-    let combined =
-      embScore > 0
-        ? 0.6 * embScore + 0.3 * lexScore + 0.1 * kwScore
-        : 0.7 * lexScore + 0.3 * kwScore;
-
-    // Penalize mismatches between question type and FAQ type
-    const faqLower = faq.question.toLowerCase() + " " + faq.answer.toLowerCase();
-    const faqIsProblem = /pok|sharp|hurt|pain|fix|wax|irritat|loose|broken/i.test(faqLower);
-    
-    let wasPenalized = false;
-    if (isWhatQuestion && faqIsProblem) {
-      combined *= 0.1; // Heavy penalty: info question matched to problem FAQ
-      wasPenalized = true;
-    } else if (isProblemQuestion && !faqIsProblem) {
-      combined *= 0.5; // Moderate penalty: problem question matched to info FAQ
-      wasPenalized = true;
-    }
+  const ranked = faqs.map(f => {
+    const emb = (f as any).embedding || [];
+    const eScore = queryEmbed.length && emb.length ? cosine(queryEmbed, emb) : 0;
+    const lScore = normalize(englishQuery) === normalize(f.question) ? 1 : 0;
 
     return {
-      id: faq.id,
-      question: faq.question,
-      answer: faq.answer,
-      keywords: faq.keywords ?? [],
-      score: combined,
-      embScore,
-      lexScore,
-      kwScore,
-      wasPenalized,
+      ...f,
+      score: 0.7 * eScore + 0.3 * lScore
     };
+  }).sort((a, b) => b.score - a.score);
+
+  const top3 = ranked.slice(0, 3);
+
+  faqLogData.top3FAQs = top3.map(f => ({
+    id: f.id,
+    question: f.question,
+    score: f.score.toFixed(3)
+  }));
+
+  // ---------------- LAYER 3: LLM FAQ PICKER ----------------
+  const selector = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content: `Pick the best FAQ. Return JSON: {"faq_id": <id>|null, "reason": "..."}` 
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          query: englishQuery,
+          faqs: top3.map(f => ({ id: f.id, q: f.question, a: f.answer }))
+        })
+      }
+    ]
   });
 
-  scoredFaqs.sort((a, b) => b.score - a.score);
+  const picked = JSON.parse(selector.choices[0].message.content || "{}");
 
-  const best = scoredFaqs[0];
-  
-  if (isWhatQuestion) {
-    console.log("🔍 Detected: INFORMATIONAL question (what/function/purpose)");
-  } else if (isProblemQuestion) {
-    console.log("🔍 Detected: PROBLEM question (poking/sharp/fix)");
-  }
-  
-  let answerText: string;
-  let faqId: number | null = null;
-  let matchedFaq: typeof best | null = null;
+  let finalAnswer = "";
+  let finalFaqId = picked.faq_id ?? null;
 
-  // Filter out penalized FAQs and those below threshold
-  const validFaqs = scoredFaqs.filter(f => 
-    !(f as any).wasPenalized && f.score >= MIN_SCORE_THRESHOLD
-  );
-  
-  const topFaqs = validFaqs.slice(0, 3);
-  
-  if (topFaqs.length === 0 || (best && best.score < MIN_SCORE_THRESHOLD)) {
-    console.log(`🤖 No valid FAQs (threshold: ${MIN_SCORE_THRESHOLD.toFixed(2)}, best score: ${best?.score.toFixed(3) || 'N/A'}), generating answer`);
-    const answerCompletion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.2,
-      messages: [
-        { role: "system", content: `You are an orthodontic clinic assistant. Answer in ${detectedLang}. Never mention media.` },
-        { role: "user", content: `User: ${userName}\nQuestion: ${trimmed}` },
-      ],
-    });
-    answerText = answerCompletion.choices[0]?.message?.content?.trim() ?? "";
-  } else {
-    console.log("🤖 LLM choosing from top 3 FAQs");
-    
-    const answerSystemPrompt = `You are an orthodontic FAQ selector. 
-Analyze the user's question and select the MOST relevant FAQ from the list.
-Return ONLY a JSON object: {"faq_id": <number>, "reason": "<short reason>"}
-
-IMPORTANT RULES:
-- If the question is a greeting ("hi", "hello", "hey") or asking about the bot itself ("what is your name", "who are you"), return {"faq_id": null, "reason": "Not an orthodontic question"}
-- If NONE of the FAQs are relevant to the question, return {"faq_id": null, "reason": "No relevant FAQ"}
-- Only select an FAQ if it DIRECTLY answers the user's question
-- Context: This is POST-OPERATIVE (after getting braces/aligners/orthodontic treatment)
-- "how brush" = how to brush WITH braces (not general brushing)
-- User has orthodontic appliances unless stated otherwise
-- Prioritize braces-specific FAQs over general dental FAQs`;
-
-    const answerUserPayload = {
-      user_question: trimmed,
-      language: detectedLang,
-      available_faqs: topFaqs.map(f => ({ 
-        id: f.id, 
-        question: f.question, 
-        answer_preview: f.answer.substring(0, 200) + "...",
-        score: f.score.toFixed(3)
-      })),
+  if (finalFaqId) {
+    finalAnswer = faqs.find(f => f.id === finalFaqId)?.answer || "";
+    const selectedFaq = faqs.find(f => f.id === finalFaqId);
+    faqLogData.selectedFAQ = {
+      id: finalFaqId,
+      question: selectedFaq?.question || "",
+      answer: finalAnswer
     };
-
-    const answerCompletion = await openai.chat.completions.create({
+    faqLogData.selectedFAQReason = picked.reason || "N/A";
+  } else {
+    faqLogData.selectedFAQ = null;
+    faqLogData.selectedFAQReason = picked.reason || "N/A";
+    const gen = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.1,
       messages: [
-        { role: "system", content: answerSystemPrompt },
-        { role: "user", content: JSON.stringify(answerUserPayload) },
-      ],
+        { role: "system", content: "Orthodontic assistant. Answer clearly." },
+        { role: "user", content: englishQuery }
+      ]
     });
-
-    const response = answerCompletion.choices[0]?.message?.content?.trim() ?? "{}";
-    try {
-      const parsed = JSON.parse(response.match(/\{[\s\S]*\}/)?.[0] || "{}");
-      faqId = parsed.faq_id;
-      
-      // If LLM says no FAQ is relevant, generate general answer
-      if (faqId === null || faqId === undefined) {
-        console.log("🤖 LLM determined no FAQ is relevant:", parsed.reason || "N/A");
-        const answerCompletion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          temperature: 0.2,
-          messages: [
-            { role: "system", content: `You are an orthodontic clinic assistant. Answer in ${detectedLang}. Never mention media.` },
-            { role: "user", content: `User: ${userName}\nQuestion: ${trimmed}` },
-          ],
-        });
-        answerText = answerCompletion.choices[0]?.message?.content?.trim() ?? "";
-      } else {
-        const selectedFaq = topFaqs.find(f => f.id === faqId);
-        
-        if (selectedFaq) {
-          matchedFaq = selectedFaq;
-          answerText = selectedFaq.answer;
-          console.log("✅ LLM selected FAQ:", faqId, "| Reason:", parsed.reason || "N/A");
-          console.log("   Q:", selectedFaq.question.substring(0, 60) + "...");
-        } else {
-          // Fallback: generate general answer if LLM selected invalid FAQ
-          console.log("⚠️ LLM selected invalid FAQ, generating answer");
-          const answerCompletion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            temperature: 0.2,
-            messages: [
-              { role: "system", content: `You are an orthodontic clinic assistant. Answer in ${detectedLang}. Never mention media.` },
-              { role: "user", content: `User: ${userName}\nQuestion: ${trimmed}` },
-            ],
-          });
-          answerText = answerCompletion.choices[0]?.message?.content?.trim() ?? "";
-        }
-      }
-    } catch {
-      // On parse error, generate general answer instead of using wrong FAQ
-      console.log("⚠️ Parse error, generating answer");
-      const answerCompletion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.2,
-        messages: [
-          { role: "system", content: `You are an orthodontic clinic assistant. Answer in ${detectedLang}. Never mention media.` },
-          { role: "user", content: `User: ${userName}\nQuestion: ${trimmed}` },
-        ],
-      });
-      answerText = answerCompletion.choices[0]?.message?.content?.trim() ?? "";
-    }
+    finalAnswer = gen.choices[0].message.content;
   }
 
-  // -------------------- LLM MEDIA SELECTION --------------------
-  // Do media selection BEFORE translation (using English answer for accurate matching)
-  const englishAnswerForMedia = answerText;
-  let selectedMediaUrls: string[] = [];
+
+  // ---------------------------------------------------------
+  // -------------------- UPDATED MEDIA LOGIC ----------------
+  // ---------------------------------------------------------
+  let selectedMedia: string[] = [];
 
   if (media.length > 0) {
-    const mediaPrompt = `Analyze the user's question type FIRST, then decide media.
+    const m = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `
+Select the MOST relevant media for the user query.
 
-User question: "${trimmed}"
-Full answer: "${englishAnswerForMedia}"
+Rules:
+- BRUSHING, CLEANING, HYGIENE → select ID 1 (How to Brush Teeth With Braces) and/or ID 3 (Interdental Brush).
+- INTERDENTAL BRUSH → select ID 3.
+- WAX, POKING WIRE, SHARP WIRE → select ID 4 (poking wire) and ID 2 (wax).
+- BRACES PARTS, FUNCTIONS OF BRACES PARTS → select ID 5 and ID 6.
+- HOW OFTEN → NO media.
+- PAIN questions → NO media.
 
-Media:
-${media.map(m => `ID: ${m.id}, Title: "${m.title}", Type: ${m.type}`).join('\n')}
-
-CRITICAL RULES (CHECK QUESTION TYPE FIRST):
-1. Question asks "HOW OFTEN" / "WHEN" / frequency → NEVER attach technique videos (return [])
-2. Question asks "HOW TO" / "HOW DO I" → attach technique videos if mentioned in answer
-3. Question asks "WHAT DOES X DO" / "PURPOSE OF" → attach diagrams/explanations only
-4. Question about PROBLEMS (pain, poking, loose, broken) → ONLY attach relevant problem-solving videos
-
-THEN check answer content:
-- Answer mentions "interproximal brush" AND question is "how to" → attach interproximal video
-- Answer mentions "brush" AND question is "how to" → attach brushing video
-- Answer mentions "wax" AND question is technique → attach wax video
-- Answer describes parts/components → attach diagram/explanation
-
-EXAMPLES:
-- "How often should I brush?" → [] (frequency question, NO videos)
-- "How to brush with braces?" → [brush videos] (technique question)
-- "What does a wire do?" → [diagram] (informational, NO technique videos)
-- "Do braces cause pain?" → [] (NO technique videos for pain questions)
-
-Return JSON array: [id1, id2, ...] or []`;
+Return ONLY a JSON array of media IDs. Example:
+[1,3]
+`
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            query: englishQuery,
+            media: media.map(m => ({
+              id: m.id,
+              title: m.title
+            }))
+          })
+        }
+      ]
+    });
 
     try {
-      const mediaCompletion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0,
-        messages: [
-          { role: "system", content: "You are a strict media filter. FIRST check question type. 'HOW OFTEN' questions get NO videos. 'HOW TO' questions get technique videos. Return ONLY relevant media IDs as JSON array." },
-          { role: "user", content: mediaPrompt },
-        ],
-      });
-
-      const mediaResponse = mediaCompletion.choices[0]?.message?.content?.trim() || "[]";
-      const selectedIds = JSON.parse(mediaResponse.match(/\[[\d,\s]*\]/)?.[0] || "[]");
-      selectedMediaUrls = media.filter(m => selectedIds.includes(m.id)).map(m => m.url);
-      
-      console.log("🎬 Media attached:", selectedMediaUrls.length);
-      if (selectedMediaUrls.length > 0) {
-        media.filter(m => selectedIds.includes(m.id)).forEach(m => {
-          console.log("   -", m.title);
-        });
-      }
-    } catch (err) {
-      console.error("❌ Media selection error:", err);
+      const ids = JSON.parse(m.choices[0].message.content || "[]");
+      selectedMedia = media.filter(x => ids.includes(x.id)).map(x => x.url);
+      faqLogData.mediaIds = ids;
+      faqLogData.mediaTitles = media.filter(x => ids.includes(x.id)).map(x => x.title);
+    } catch (e) {
+      logToServer('error', `[ERROR] Media parse error: ${e}`, queryId, userId);
     }
   }
 
-  // -------------------- TRANSLATION IF NEEDED (AFTER MEDIA) --------------------
-  if (detectedLang !== "english") {
-    console.log("🌐 Translating answer to:", detectedLang === "urdu" ? "Urdu script" : "Roman Urdu");
-    
-    const targetLanguage = detectedLang === "urdu" 
-      ? "Urdu (اردو script)" 
-      : "Roman Urdu (Urdu written in English letters like 'kaise', 'kartay')";
-    
-    try {
-      const translationCompletion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.1,
-        messages: [
-          { 
-            role: "system", 
-            content: `You are a professional translator. Translate the orthodontic FAQ answer to ${targetLanguage}. Maintain all medical terms accuracy. Return ONLY the translation.` 
-          },
-          { 
-            role: "user", 
-            content: `Translate this to ${targetLanguage}:\n\n${answerText}` 
-          },
-        ],
-      });
+  // ---------------------------------------------------------
+  // ------------------ END UPDATED MEDIA LOGIC --------------
+  // ---------------------------------------------------------
 
-      const translatedText = translationCompletion.choices[0]?.message?.content?.trim();
-      if (translatedText) {
-        answerText = translatedText;
-        console.log("✅ Answer translated to", detectedLang);
-      }
-    } catch (err) {
-      console.error("❌ Translation error:", err);
-      console.log("⚠️ Using original English answer");
-    }
+
+  // ---------------- LAYER 5: TRANSLATE FINAL ANSWER ---------------- 
+  if (lang !== "english") {
+    const tr = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            lang === "urdu"
+              ? "Translate into Urdu script."
+              : "Translate into Roman Urdu (English letters).",
+        },
+        { role: "user", content: finalAnswer },
+      ],
+    });
+
+    finalAnswer = tr.choices[0].message.content;
   }
+
+  // Store all FAQ information in a single log entry
+  faqLogData.answer = finalAnswer;
+  logToServer('log', `[FAQ] ${JSON.stringify(faqLogData)}`, queryId, userId);
 
   return {
-    text: answerText,
-    mediaUrls: selectedMediaUrls,
-    faqId,
+    text: finalAnswer,
+    mediaUrls: selectedMedia,
+    faqId: finalFaqId,
+    queryId: queryId,
   };
-};
+}

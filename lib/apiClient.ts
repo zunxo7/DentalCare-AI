@@ -9,12 +9,33 @@ import type {
 
 const API_BASE = '/api';
 
+// Get admin password from environment variable
+function getAdminPassword(): string | null {
+  return import.meta.env.VITE_ADMIN_PASSWORD || null;
+}
+
+// Check if URL is a debug or reports endpoint
+function isAdminEndpoint(url: string | Request): boolean {
+  const urlString = typeof url === 'string' ? url : url.url;
+  return urlString.includes('/api/debug/') || urlString.includes('/api/reports');
+}
+
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...(init && init.headers),
+  };
+
+  // Add admin password header for debug/reports endpoints
+  if (isAdminEndpoint(input)) {
+    const adminPassword = getAdminPassword();
+    if (adminPassword) {
+      headers['x-admin-password'] = adminPassword;
+    }
+  }
+
   const res = await fetch(input, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init && init.headers),
-    },
+    headers,
     ...init,
   });
 
@@ -67,19 +88,16 @@ export const api = {
   // FAQs
 getFaqs: async () => {
   const data = await request<FAQ[]>(`${API_BASE}/faqs`);
-  return data.map(f => ({
-    ...f,
-    keywords: f.keywords ?? [],   // FIX here
-  }));
+  return data;
 },
 
-createFaq: (data: { question: string; answer: string; keywords?: string[] }) =>
+createFaq: (data: { question: string; answer: string }) =>
     request<FAQ>(`${API_BASE}/faqs`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
-  updateFaq: (id: number, data: { question: string; answer: string; keywords?: string[] }) =>
+  updateFaq: (id: number, data: { question: string; answer: string }) =>
     request<FAQ>(`${API_BASE}/faqs/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -101,7 +119,6 @@ createFaq: (data: { question: string; answer: string; keywords?: string[] }) =>
     title: string;
     url: string;
     type: Media['type'];
-    keywords: string[];
   }) =>
     request<Media>(`${API_BASE}/media`, {
       method: 'POST',
@@ -114,7 +131,6 @@ createFaq: (data: { question: string; answer: string; keywords?: string[] }) =>
       title: string;
       url: string;
       type: Media['type'];
-      keywords: string[];
     }
   ) =>
     request<Media>(`${API_BASE}/media/${id}`, {
@@ -201,5 +217,30 @@ getAllMedia: async () => {
   // Dangerous actions
   resetAllUserData: () =>
     request<void>(`${API_BASE}/reset-all-user-data`, { method: 'POST' }),
+
+  // Reports
+  createReport: (data: {
+    userId?: string | null;
+    queryId?: string | null;
+    reportType: string;
+  }) =>
+    request<{ success: boolean; report: any }>(`${API_BASE}/reports`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getReports: () =>
+    request<{ success: boolean; reports: any[] }>(`${API_BASE}/reports`),
+  
+  updateReportStatus: (reportId: number, status: 'active' | 'resolved') =>
+    request<{ success: boolean; report: any }>(`${API_BASE}/reports/${reportId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    }),
+
+  deleteReport: (reportId: number) =>
+    request<{ success: boolean; message: string }>(`${API_BASE}/reports/${reportId}`, {
+      method: 'DELETE',
+    }),
 };
 

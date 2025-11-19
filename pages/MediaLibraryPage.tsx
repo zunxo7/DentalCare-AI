@@ -18,15 +18,13 @@ const MediaModal = ({ item, onClose, refreshData, showToast }: { item: Partial<M
     const [title, setTitle] = useState(item?.title || '');
     const [url, setUrl] = useState(item?.url || '');
     const [type, setType] = useState<'video' | 'image' | 'document'>(item?.type || 'video');
-    const [keywords, setKeywords] = useState((item?.keywords || []).join(', '));
     const [isSaving, setIsSaving] = useState(false);
     const isEditing = !!item?.id;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSaving(true);
-        const keywordsArray = keywords.split(',').map(k => k.trim()).filter(Boolean);
-        const mediaData = { title, url, type, keywords: keywordsArray };
+        const mediaData = { title, url, type };
         try {
             if (isEditing && item?.id) {
                 await api.updateMedia(item.id, mediaData);
@@ -62,10 +60,6 @@ const MediaModal = ({ item, onClose, refreshData, showToast }: { item: Partial<M
                             <option value="image">Image</option>
                             <option value="document">Document</option>
                         </select>
-                    </div>
-                     <div>
-                        <label className="block text-sm font-medium text-text-secondary mb-2">Keywords (comma-separated)</label>
-                        <input type="text" value={keywords} onChange={e => setKeywords(e.target.value)} className="w-full bg-surface-light border border-border rounded-md py-2 px-4 focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div className="flex justify-end gap-4 pt-4">
                         <button type="button" onClick={onClose} className="px-4 py-2 rounded-md bg-surface-light hover:opacity-80 transition-opacity">Cancel</button>
@@ -149,18 +143,6 @@ const MediaCard: React.FC<{ item: Media; onEdit: () => void; onDelete: () => voi
       {item.url}
     </a>
 
-    {item.keywords.length > 0 && (
-      <div className="mt-4 flex flex-wrap gap-2">
-        {item.keywords.map(keyword => (
-          <span
-            key={keyword}
-            className="text-xs bg-surface-light text-text-secondary px-2 py-1 rounded-full"
-          >
-            {keyword}
-          </span>
-        ))}
-      </div>
-    )}
   </div>
 );
 

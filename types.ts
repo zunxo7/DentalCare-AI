@@ -4,9 +4,8 @@ export interface FAQ {
   answer: string;
   asked_count: number;
   created_at: string;
-  embeddings?: number[];
+  embedding?: number[];
   language?: string;
-  keywords?: string[];      // REQUIRED for new matcher
 }
 
 export interface Media {
@@ -14,7 +13,6 @@ export interface Media {
   title: string;
   type: 'video' | 'image' | 'document';
   url: string;
-  keywords: string[];
   created_at: string;
 }
 
@@ -26,6 +24,7 @@ export interface ChatMessage {
   timestamp: string; // Formatted time string for live chat display
   mediaUrls?: string[];
   created_at: string; // ISO string for precise time
+  queryId?: string | null; // For linking to logs
 }
 
 export interface User {

@@ -15,10 +15,6 @@ interface ManageFaqsPageProps {
 const FAQModal = ({ faq, onClose, refreshData, showToast }: { faq: Partial<FAQ> | null, onClose: () => void, refreshData: () => void, showToast: (message: string, type: 'success' | 'error') => void }) => {
     const [question, setQuestion] = useState(faq?.question || '');
     const [answer, setAnswer] = useState(faq?.answer || '');
-    const [keywordsText, setKeywordsText] = useState(
-  faq?.keywords?.join(", ") || ""
-);
-
     const [isSaving, setIsSaving] = useState(false);
     const isEditing = !!faq?.id;
 
@@ -27,11 +23,7 @@ const FAQModal = ({ faq, onClose, refreshData, showToast }: { faq: Partial<FAQ> 
         setIsSaving(true);
         const faqData = {
   question,
-  answer,
-  keywords: keywordsText
-    .split(",")
-    .map(k => k.trim())
-    .filter(k => k.length > 0)
+  answer
 };
         try {
             if (isEditing && faq?.id) {
@@ -75,23 +67,6 @@ const FAQModal = ({ faq, onClose, refreshData, showToast }: { faq: Partial<FAQ> 
                             required
                         />
                     </div>
-                    <div className="mb-6">
-  <label className="block text-sm font-medium text-text-secondary mb-2">
-    Keywords (comma separated)
-  </label>
-
-  <input
-    type="text"
-    value={keywordsText}
-    onChange={e => setKeywordsText(e.target.value)}
-    placeholder="e.g. braces, pain, dard, wire, bracket loose"
-    className="w-full bg-surface-light border border-border rounded-md py-2 px-4 focus:outline-none focus:ring-2 focus:ring-primary"
-  />
-
-  <p className="text-xs text-text-secondary/70 mt-1">
-    Separate keywords with commas.
-  </p>
-</div>
                     <div className="flex justify-end gap-4">
                         <button type="button" onClick={onClose} className="px-4 py-2 rounded-md bg-surface-light hover:opacity-80 transition-opacity">Cancel</button>
                         <button type="submit" disabled={isSaving} className="px-4 py-2 rounded-md bg-primary text-background font-bold hover:bg-primary-hover transition-colors flex items-center gap-2 disabled:opacity-50">
@@ -133,7 +108,7 @@ const ConfirmDeleteModal = ({ isOpen, onClose, onConfirm, title, message }: {
   );
 };
 
-const parseFaqCsv = (csvText: string): { question: string; answer: string; keywords: string[] }[] => {
+const parseFaqCsv = (csvText: string): { question: string; answer: string }[] => {
   const results = Papa.parse<string[]>(csvText, {
     header: false,
     skipEmptyLines: 'greedy',
@@ -150,23 +125,17 @@ const parseFaqCsv = (csvText: string): { question: string; answer: string; keywo
 
   const dataRows = hasHeader ? rows.slice(1) : rows;
 
-  const faqs: { question: string; answer: string; keywords: string[] }[] = [];
+  const faqs: { question: string; answer: string }[] = [];
 
   for (const row of dataRows) {
     if (!row) continue;
 
     const question = (row[0] ?? '').trim();
     const answer = (row[1] ?? '').trim();
-    const keywordsRaw = (row[2] ?? '').trim();
-
-    // Convert "a, b, c" to ["a", "b", "c"]
-    const keywords = keywordsRaw
-      ? keywordsRaw.split(',').map(k => k.trim()).filter(k => k.length > 0)
-      : [];
 
     if (!question || !answer) continue;
 
-    faqs.push({ question, answer, keywords });
+    faqs.push({ question, answer });
   }
 
   return faqs;
@@ -246,8 +215,7 @@ const ManageFaqsPage: React.FC<ManageFaqsPageProps> = ({ faqs, refreshData, load
         try {
           await api.createFaq({
   question: row.question,
-  answer: row.answer,
-  keywords: row.keywords
+  answer: row.answer
 });
 
           successCount += 1;
@@ -341,19 +309,6 @@ const ManageFaqsPage: React.FC<ManageFaqsPageProps> = ({ faqs, refreshData, load
                   <h3 className="font-bold text-lg mb-2 text-text-primary">{faq.question}</h3>
                   <p className="text-text-secondary text-sm whitespace-pre-wrap leading-relaxed">{faq.answer}</p>
                   <p className="text-xs text-text-secondary/70 mt-4">Asked {faq.asked_count} times</p>
-                  {/* Keyword Display */}
-{faq.keywords && faq.keywords.length > 0 && (
-  <div className="flex flex-wrap gap-2 mt-3">
-    {faq.keywords.map((kw, i) => (
-      <span
-        key={i}
-        className="px-2 py-1 text-xs rounded-md bg-surface-light border border-border text-text-secondary"
-      >
-        {kw}
-      </span>
-    ))}
-  </div>
-)}
 
                 </div>
                 <div className="flex gap-2 ml-auto md:ml-4 flex-shrink-0">
