@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { debugFetch } from '../../lib/debugApi';
-import { SpinnerIcon } from '../../components/icons';
 import ConfirmDeleteModal from './components/ConfirmDeleteModal';
 
 interface LogsPageProps {
@@ -8,8 +7,7 @@ interface LogsPageProps {
 }
 
 const LogsPage: React.FC<LogsPageProps> = ({ showToast }) => {
-  const [logs, setLogs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [allLogs, setAllLogs] = useState<any[]>([]); // Store all fetched logs
   const [filterPrefix, setFilterPrefix] = useState<string>('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [copiedQueryId, setCopiedQueryId] = useState<string | null>(null);
@@ -56,24 +54,12 @@ const LogsPage: React.FC<LogsPageProps> = ({ showToast }) => {
       const response = await debugFetch(url);
       const data = await response.json();
       if (data.success) {
-        // Server returns logs in DESC order (newest first), so no need to reverse
-        let filteredLogs = data.logs;
-        
-        // Filter by prefix on client side
-        if (filterPrefix !== 'all') {
-          filteredLogs = filteredLogs.filter(log => {
-            const prefix = getPrefix(log.message);
-            return prefix === filterPrefix;
-          });
-        }
-        
-        setLogs(filteredLogs);
+        // Store all logs - filtering will be done client-side for instant updates
+        setAllLogs(data.logs);
       }
     } catch (error: any) {
       console.error('Error fetching logs:', error);
       showToast('Failed to load logs', 'error');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -85,7 +71,7 @@ const LogsPage: React.FC<LogsPageProps> = ({ showToast }) => {
         body: JSON.stringify({})
       });
       if (response.ok) {
-        setLogs([]);
+        setAllLogs([]);
         showToast('Logs cleared', 'success');
         setShowClearLogsModal(false);
       }
@@ -101,88 +87,116 @@ const LogsPage: React.FC<LogsPageProps> = ({ showToast }) => {
     setTimeout(() => setCopiedQueryId(null), 2000);
   };
 
+  // Fetch logs when filterQueryId changes or on mount
   useEffect(() => {
     fetchLogs();
     if (autoRefresh) {
-      const interval = setInterval(fetchLogs, 5000);
+      const interval = setInterval(fetchLogs, 2000);
       return () => clearInterval(interval);
     }
-  }, [filterPrefix, filterQueryId, autoRefresh]);
+  }, [filterQueryId, autoRefresh]);
+
+  // Trigger refresh when filter prefix changes
+  useEffect(() => {
+    fetchLogs();
+  }, [filterPrefix]);
+
+  // Handle filter change - updates immediately
+  const handleFilterChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setFilterPrefix(e.target.value);
+  }, []);
+
+  // Filter logs immediately when filterPrefix changes (no refetch needed)
+  const logs = useMemo(() => {
+    if (filterPrefix === 'all') {
+      return allLogs;
+    }
+    return allLogs.filter(log => {
+      const prefix = getPrefix(log.message);
+      return prefix === filterPrefix;
+    });
+  }, [allLogs, filterPrefix]);
 
   // Group logs by time proximity (logs within 5 seconds of each other)
   // Also group FAQ logs by queryId if they have one
-  const TIME_WINDOW_MS = 5000; // 5 seconds
-  
-  const sortedLogs = [...logs].sort((a, b) => {
-    const timeA = new Date(a.timestamp || a.created_at).getTime();
-    const timeB = new Date(b.timestamp || b.created_at).getTime();
-    return timeB - timeA; // Most recent first
-  });
-
-  const groupedLogs: Array<{ queryId: string | null; prefix: string; logs: any[]; firstTimestamp: number }> = [];
-  
-  for (const log of sortedLogs) {
-    const logTime = new Date(log.timestamp || log.created_at).getTime();
-    const prefix = getPrefix(log.message);
-    const queryId = log.query_id;
+  // Memoize this expensive operation so it only runs when filtered logs change
+  const logGroups = useMemo(() => {
+    if (logs.length === 0) return [];
     
-    // For FAQ logs with queryId, try to find existing group with same queryId
-    if (prefix === 'FAQ' && queryId) {
-      const existingGroup = groupedLogs.find(g => 
-        g.queryId === queryId && 
-        Math.abs(g.firstTimestamp - logTime) <= TIME_WINDOW_MS
-      );
-      
-      if (existingGroup) {
-        existingGroup.logs.push(log);
-        continue;
-      }
-    }
-    
-    // Try to find a group within the time window
-    const nearbyGroup = groupedLogs.find(g => 
-      Math.abs(g.firstTimestamp - logTime) <= TIME_WINDOW_MS
-    );
-    
-    if (nearbyGroup) {
-      nearbyGroup.logs.push(log);
-      // Update firstTimestamp if this log is older (shouldn't happen since sorted, but just in case)
-      if (logTime < nearbyGroup.firstTimestamp) {
-        nearbyGroup.firstTimestamp = logTime;
-      }
-    } else {
-      // Create new group
-      groupedLogs.push({
-        queryId: prefix === 'FAQ' ? queryId : null,
-        prefix: prefix,
-        logs: [log],
-        firstTimestamp: logTime
+    // For very small lists, skip complex grouping - just create one group per log
+    if (logs.length <= 5) {
+      return logs.map((log, index) => {
+        const time = new Date(log.timestamp || log.created_at).getTime();
+        const prefix = getPrefix(log.message);
+        return {
+          key: `group-${time}-${index}`,
+          queryId: prefix === 'FAQ' ? log.query_id : null,
+          prefix: prefix,
+          logs: [log],
+        };
       });
     }
-  }
+    
+    const TIME_WINDOW_MS = 5000; // 5 seconds
+    
+    // Pre-compute timestamps to avoid repeated Date parsing
+    const logsWithTime = logs.map(log => ({
+      log,
+      time: new Date(log.timestamp || log.created_at).getTime(),
+      prefix: getPrefix(log.message),
+    }));
+    
+    // Sort by time (most recent first)
+    logsWithTime.sort((a, b) => b.time - a.time);
 
-  // Sort logs within each group by time (most recent first)
-  const logGroups = groupedLogs.map(group => ({
-    key: `group-${group.firstTimestamp}`,
-    queryId: group.queryId,
-    prefix: group.prefix,
-    logs: group.logs.sort((a, b) => {
-      const timeA = new Date(a.timestamp || a.created_at).getTime();
-      const timeB = new Date(b.timestamp || b.created_at).getTime();
-      return timeB - timeA; // Most recent first
-    }),
-  }));
+    const groupedLogs: Array<{ queryId: string | null; prefix: string; logs: any[]; firstTimestamp: number }> = [];
+    
+    for (const { log, time, prefix } of logsWithTime) {
+      const queryId = log.query_id;
+      
+      // For FAQ logs with queryId, try to find existing group with same queryId
+      if (prefix === 'FAQ' && queryId) {
+        const existingGroup = groupedLogs.find(g => 
+          g.queryId === queryId && 
+          Math.abs(g.firstTimestamp - time) <= TIME_WINDOW_MS
+        );
+        
+        if (existingGroup) {
+          existingGroup.logs.push(log);
+          continue;
+        }
+      }
+      
+      // Try to find a group within the time window
+      const nearbyGroup = groupedLogs.find(g => 
+        Math.abs(g.firstTimestamp - time) <= TIME_WINDOW_MS
+      );
+      
+      if (nearbyGroup) {
+        nearbyGroup.logs.push(log);
+        // Update firstTimestamp if this log is older (shouldn't happen since sorted, but just in case)
+        if (time < nearbyGroup.firstTimestamp) {
+          nearbyGroup.firstTimestamp = time;
+        }
+      } else {
+        // Create new group
+        groupedLogs.push({
+          queryId: prefix === 'FAQ' ? queryId : null,
+          prefix: prefix,
+          logs: [log],
+          firstTimestamp: time
+        });
+      }
+    }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="flex items-center gap-3 text-text-secondary">
-          <SpinnerIcon />
-          <span>Loading logs...</span>
-        </div>
-      </div>
-    );
-  }
+    // Logs are already sorted by time, so we can skip sorting within groups
+    return groupedLogs.map((group, index) => ({
+      key: `group-${group.firstTimestamp}-${index}`,
+      queryId: group.queryId,
+      prefix: group.prefix,
+      logs: group.logs, // Already sorted from the main sort
+    }));
+  }, [logs]);
 
   return (
     <div className="min-h-screen bg-background p-2 sm:p-4 md:p-8">
@@ -204,7 +218,7 @@ const LogsPage: React.FC<LogsPageProps> = ({ showToast }) => {
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <select
                 value={filterPrefix}
-                onChange={(e) => setFilterPrefix(e.target.value)}
+                onChange={handleFilterChange}
                 className="px-3 py-2 rounded-lg bg-surface-light border border-border text-text-primary text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="all">All Categories</option>

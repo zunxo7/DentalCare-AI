@@ -65,7 +65,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ showToast }) => {
   useEffect(() => {
     fetchReports();
     if (autoRefresh) {
-      const interval = setInterval(() => fetchReports(true), 2000);
+      const interval = setInterval(() => fetchReports(true), 1000);
       return () => clearInterval(interval);
     }
   }, [autoRefresh]);

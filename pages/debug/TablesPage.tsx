@@ -27,7 +27,6 @@ const TablesPage: React.FC<TablesPageProps> = ({ showToast }) => {
     logs: [],
     reports: [],
   });
-  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<keyof TableData>('faqs');
   const [visibleColumns, setVisibleColumns] = useState<Record<string, Set<string>>>({});
   const [deletingRow, setDeletingRow] = useState<string | null>(null);
@@ -42,7 +41,6 @@ const TablesPage: React.FC<TablesPageProps> = ({ showToast }) => {
   const itemsPerPage = 25;
 
   const fetchTables = async () => {
-    setLoading(true);
     try {
       const response = await debugFetch('/api/debug/tables');
       const data = await response.json();
@@ -50,8 +48,6 @@ const TablesPage: React.FC<TablesPageProps> = ({ showToast }) => {
     } catch (error: any) {
       console.error('Error fetching tables:', error);
       showToast('Failed to load table data', 'error');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -530,17 +526,6 @@ const TablesPage: React.FC<TablesPageProps> = ({ showToast }) => {
       </div>
     );
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="flex items-center gap-3 text-text-secondary">
-          <SpinnerIcon />
-          <span>Loading tables...</span>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background p-2 sm:p-4 md:p-8">

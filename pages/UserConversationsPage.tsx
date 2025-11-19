@@ -95,33 +95,52 @@ const UserConversationsPage: React.FC = () => {
         try {
             const data = await api.getAdminConversationsWithUsers();
 
-            const userMap = new Map<string, { user: User; convos: Conversation[]; totalTimeSpent: number }>();
+            const userMap = new Map<string, { user: User; convos: Conversation[]; totalMessages: number; totalTimeSpent: number; lastActive: string }>();
             
-            // Process conversations and calculate time spent
+            // Process conversations and count messages per user
             for (const convo of data || []) {
                 if (!convo.user) continue;
                 if (!userMap.has(convo.user.id)) {
-                    userMap.set(convo.user.id, { user: convo.user, convos: [], totalTimeSpent: 0 });
+                    userMap.set(convo.user.id, { user: convo.user, convos: [], totalMessages: 0, totalTimeSpent: 0, lastActive: convo.user.created_at });
                 }
                 userMap.get(convo.user.id)!.convos.push(convo);
                 
-                // Fetch messages to calculate time spent
+                // Fetch messages to count and calculate time spent
                 try {
                     const messages = await api.getMessagesForConversation(convo.id);
-                    if (messages && messages.length > 1) {
-                        const firstMsg = new Date(messages[0].created_at).getTime();
-                        const lastMsg = new Date(messages[messages.length - 1].created_at).getTime();
-                        const timeSpentSeconds = Math.round((lastMsg - firstMsg) / 1000);
-                        userMap.get(convo.user.id)!.totalTimeSpent += timeSpentSeconds;
+                    if (messages && messages.length > 0) {
+                        const userEntry = userMap.get(convo.user.id)!;
+                        
+                        // Only count user messages, not bot messages
+                        const userMessages = messages.filter(msg => msg.sender === 'user');
+                        userEntry.totalMessages += userMessages.length;
+                        
+                        // Update last active to the most recent user message
+                        if (userMessages.length > 0) {
+                            const lastUserMsg = userMessages[userMessages.length - 1];
+                            const lastMsgTime = new Date(lastUserMsg.created_at).getTime();
+                            const currentLastActive = new Date(userEntry.lastActive).getTime();
+                            if (lastMsgTime > currentLastActive) {
+                                userEntry.lastActive = lastUserMsg.created_at;
+                            }
+                        }
+                        
+                        // Calculate time spent if there are multiple messages (using all messages for time calculation)
+                        if (messages.length > 1) {
+                            const firstMsg = new Date(messages[0].created_at).getTime();
+                            const lastMsg = new Date(messages[messages.length - 1].created_at).getTime();
+                            const timeSpentSeconds = Math.round((lastMsg - firstMsg) / 1000);
+                            userEntry.totalTimeSpent += timeSpentSeconds;
+                        }
                     }
                 } catch {}
             }
 
             const usersWithStats: UserWithStats[] = Array.from(userMap.values())
-                .map(({ user, convos, totalTimeSpent }) => ({
+                .map(({ user, convos, totalMessages, totalTimeSpent, lastActive }) => ({
                     ...user,
-                    conversation_count: convos.length,
-                    last_active: convos[0]?.created_at || user.created_at,
+                    message_count: totalMessages,
+                    last_active: lastActive,
                     time_spent: totalTimeSpent,
                 }))
                 .sort(
@@ -284,7 +303,7 @@ const getMessageAttachments = (msg: ChatMessage): { url: string; title: string; 
                                                 <div className="font-semibold text-sm text-text-primary truncate">{user.name}</div>
                                                 <div className="flex items-center gap-2 mt-1">
                                                     <ChatIcon className="w-3 h-3 text-text-secondary/70" />
-                                                    <span className="text-xs text-text-secondary">{user.conversation_count}</span>
+                                                    <span className="text-xs text-text-secondary">{user.message_count} {user.message_count === 1 ? 'message' : 'messages'}</span>
                                                     <span className="text-xs text-text-secondary/50">•</span>
                                                     <span className="text-xs text-text-secondary/70">{timeDisplay}</span>
                                                 </div>
@@ -314,7 +333,7 @@ const getMessageAttachments = (msg: ChatMessage): { url: string; title: string; 
                              </div>
                              <div className="min-w-0 flex-1 overflow-hidden">
                                 <h3 className="font-bold text-lg truncate">{selectedUser.name}</h3>
-                                <p className="text-xs text-text-secondary truncate">{selectedUserConversations.length} conversation{selectedUserConversations.length !== 1 ? 's' : ''}</p>
+                                <p className="text-xs text-text-secondary truncate">{selectedUser.message_count} {selectedUser.message_count === 1 ? 'message' : 'messages'}</p>
                             </div>
                         </header>
                         <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-4 md:p-6 space-y-6 bg-gradient-to-b from-background to-surface/10">

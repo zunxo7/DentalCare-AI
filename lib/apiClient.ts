@@ -65,6 +65,7 @@ type RawMessageRow = {
   sender: 'user' | 'bot';
   text: string;
   media_urls?: string[] | null;
+  query_id?: string | null;
   created_at: string;
 };
 
@@ -79,6 +80,7 @@ function mapRawMessage(row: RawMessageRow): ChatMessage {
     sender: row.sender,
     text: row.text,
     mediaUrls: row.media_urls ?? undefined,
+    queryId: row.query_id ?? null,
     created_at: row.created_at,
     timestamp: new Date(row.created_at).toLocaleString(),
   };
@@ -184,6 +186,7 @@ createFaq: (data: { question: string; answer: string }) =>
     sender: 'user' | 'bot';
     text: string;
     mediaUrls?: string[];
+    queryId?: string | null;
   }) => {
     const row = await request<RawMessageRow>(`${API_BASE}/messages`, {
       method: 'POST',

@@ -243,6 +243,56 @@ const ManageFaqsPage: React.FC<ManageFaqsPageProps> = ({ faqs, refreshData, load
     }
   };
 
+  const handleExportCsv = () => {
+    if (faqs.length === 0) {
+      showToast('No FAQs to export', 'error');
+      return;
+    }
+
+    try {
+      // Prepare data for CSV export
+      const csvData = faqs.map(faq => ({
+        question: faq.question,
+        answer: faq.answer,
+      }));
+
+      // Generate CSV with header, properly escaping special characters
+      const csv = Papa.unparse(csvData, {
+        header: true,
+        columns: ['question', 'answer'],
+        quotes: true, // Force quotes to properly escape special characters
+        escapeChar: '"', // Use double quotes for escaping
+        quoteChar: '"', // Use double quotes for fields
+        delimiter: ',',
+        newline: '\n',
+      });
+
+      // Create blob with UTF-8 BOM for better Excel compatibility
+      const BOM = '\uFEFF';
+      const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      
+      link.href = url;
+      link.download = `faqs_export_${new Date().toISOString().split('T')[0]}.csv`;
+      link.style.display = 'none';
+      
+      document.body.appendChild(link);
+      link.click();
+      
+      // Clean up after a short delay
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 100);
+      
+      showToast(`Exported ${faqs.length} FAQ${faqs.length === 1 ? '' : 's'} to CSV`, 'success');
+    } catch (error: any) {
+      console.error('Error exporting FAQs to CSV:', error);
+      showToast(`Failed to export FAQs: ${error.message || 'Unknown error'}`, 'error');
+    }
+  };
+
   return (
     <div className="p-4 md:p-8 bg-background text-text-primary">
       {isFaqModalOpen && <FAQModal faq={selectedFaq} onClose={closeFaqModal} refreshData={refreshData} showToast={showToast} />}
@@ -264,27 +314,35 @@ const ManageFaqsPage: React.FC<ManageFaqsPageProps> = ({ faqs, refreshData, load
           <h2 className="text-2xl font-bold">All FAQs ({faqs.length})</h2>
           <p className="text-text-secondary">Manage your frequently asked questions</p>
         </div>
-        <div className="flex gap-2 self-start md:self-center">
+        <div className="flex flex-wrap gap-2 self-start md:self-center">
           <button
             onClick={() => openFaqModal(null)}
-            className="bg-primary text-background font-bold px-4 py-2 rounded-md hover:bg-primary-hover transition-colors flex items-center gap-2 text-sm"
+            className="bg-primary text-background font-bold px-3 sm:px-4 py-2 rounded-md hover:bg-primary-hover transition-colors flex items-center gap-2 text-xs sm:text-sm whitespace-nowrap"
           >
             <PlusIcon /> Add FAQ
           </button>
           <button
             onClick={handleImportClick}
             disabled={isImporting}
-            className="bg-primary/10 text-primary font-bold px-4 py-2 rounded-md hover:bg-primary/20 transition-colors flex items-center gap-2 text-sm disabled:opacity-50"
+            className="bg-primary/10 text-primary font-bold px-3 sm:px-4 py-2 rounded-md hover:bg-primary/20 transition-colors flex items-center gap-2 text-xs sm:text-sm disabled:opacity-50 whitespace-nowrap"
           >
             <PlusIcon /> {isImporting ? 'Importing...' : 'Import CSV'}
           </button>
           {faqs.length > 0 && (
-            <button
-              onClick={openDeleteAllModal}
-              className="bg-accent text-white px-4 py-2 rounded-md hover:bg-accent-hover transition-colors flex items-center gap-2 text-sm font-semibold"
-            >
-              <TrashIcon /> Delete All
-            </button>
+            <>
+              <button
+                onClick={handleExportCsv}
+                className="bg-green-500/20 text-green-500 font-bold px-3 sm:px-4 py-2 rounded-md hover:bg-green-500/30 transition-colors flex items-center gap-2 text-xs sm:text-sm whitespace-nowrap"
+              >
+                Export CSV
+              </button>
+              <button
+                onClick={openDeleteAllModal}
+                className="bg-accent text-white px-3 sm:px-4 py-2 rounded-md hover:bg-accent-hover transition-colors flex items-center gap-2 text-xs sm:text-sm font-semibold whitespace-nowrap"
+              >
+                <TrashIcon /> Delete All
+              </button>
+            </>
           )}
         </div>
       </div>

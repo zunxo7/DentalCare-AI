@@ -392,6 +392,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                     sender: botMessagePayload.sender,
                     text: botMessagePayload.text,
                     mediaUrls: botMessagePayload.mediaUrls,
+                    queryId: botMessagePayload.queryId,
                 });
             } catch (error: any) {
                 console.error('Error sending message:', error);
@@ -632,16 +633,40 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
     const handleSubmitReport = async (reportType: string) => {
         if (!reportingMessage || !currentUser) return;
 
-        // Only use messageId if it's a valid integer (from database)
-        // Temporary IDs from Date.now() + Math.random() are floats and should be null
-        const messageId = Number.isInteger(reportingMessage.id) && reportingMessage.id > 0 
-            ? reportingMessage.id 
-            : null;
+        // Ensure queryId is present - all reports must have a queryId
+        let queryId = reportingMessage.queryId;
+        
+        // If message doesn't have queryId, try to find it from the conversation
+        // Look for the bot message that matches this one (for old messages)
+        if (!queryId && reportingMessage.sender === 'bot') {
+            // Try to find queryId from logs by matching message text and timestamp
+            // For now, we'll require queryId - if missing, show error
+            showToast('Cannot submit report: message is missing query ID. Please report a recent message.', 'error');
+            return;
+        }
+
+        // User messages don't have queryId - find the associated bot message's queryId
+        if (!queryId && reportingMessage.sender === 'user') {
+            // Find the next bot message in the conversation
+            const messageIndex = messages.findIndex(m => m.id === reportingMessage.id);
+            const botMessage = messages.slice(messageIndex + 1).find(m => m.sender === 'bot' && m.queryId);
+            if (botMessage?.queryId) {
+                queryId = botMessage.queryId;
+            } else {
+                showToast('Cannot submit report: no associated query ID found. Please report a recent message.', 'error');
+                return;
+            }
+        }
+
+        if (!queryId) {
+            showToast('Cannot submit report: query ID is required.', 'error');
+            return;
+        }
 
         try {
             await api.createReport({
                 userId: currentUser.id,
-                queryId: reportingMessage.queryId || null,
+                queryId: queryId,
                 reportType,
             });
             showToast('Report submitted successfully', 'success');

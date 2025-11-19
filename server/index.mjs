@@ -140,8 +140,15 @@ async function initDatabase() {
       sender          TEXT NOT NULL CHECK (sender IN ('user', 'bot')),
       text            TEXT NOT NULL,
       media_urls      TEXT[] NOT NULL DEFAULT '{}',
+      query_id        TEXT,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );`,
+    []
+  );
+
+  // Add query_id column if it doesn't exist (for existing databases)
+  await query(
+    `ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS query_id TEXT;`,
     []
   );
 
@@ -217,6 +224,19 @@ async function initDatabase() {
       status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'resolved')),
       created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );`,
+    []
+  );
+
+  // Ensure query_id is NOT NULL (for existing databases)
+  await query(
+    `DO $$
+    BEGIN
+      ALTER TABLE user_reports ALTER COLUMN query_id SET NOT NULL;
+    EXCEPTION
+      WHEN OTHERS THEN
+        -- Column might already be NOT NULL or not exist, that's okay
+        NULL;
+    END $$;`,
     []
   );
 
@@ -658,7 +678,7 @@ app.get('/api/conversations/:id/messages', async (req, res) => {
   try {
     const { rows } = await query(
       `
-      SELECT id, conversation_id, sender, text, media_urls, created_at
+      SELECT id, conversation_id, sender, text, media_urls, query_id, created_at
       FROM chat_messages
       WHERE conversation_id = $1
       ORDER BY created_at ASC
@@ -675,7 +695,7 @@ app.get('/api/conversations/:id/messages', async (req, res) => {
 });
 
 app.post('/api/messages', async (req, res) => {
-  const { conversationId, sender, text, mediaUrls } = req.body || {};
+  const { conversationId, sender, text, mediaUrls, queryId } = req.body || {};
   if (!conversationId || !sender || !text) {
     return res
       .status(400)
@@ -684,11 +704,11 @@ app.post('/api/messages', async (req, res) => {
   try {
     const { rows } = await query(
       `
-      INSERT INTO chat_messages (conversation_id, sender, text, media_urls)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, conversation_id, sender, text, media_urls, created_at
+      INSERT INTO chat_messages (conversation_id, sender, text, media_urls, query_id)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, conversation_id, sender, text, media_urls, query_id, created_at
     `,
-      [conversationId, sender, text, mediaUrls || []]
+      [conversationId, sender, text, mediaUrls || [], queryId || null]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -1384,16 +1404,16 @@ app.post('/api/reports', async (req, res) => {
     return res.status(400).json({ error: 'Report type is required' });
   }
 
-  // Use the provided queryId, or null if not provided
-  // Don't generate a fake queryId - reports without queryId just won't link to logs
-  const finalQueryId = queryId || null;
+  if (!queryId || !queryId.trim()) {
+    return res.status(400).json({ error: 'queryId is required for all reports' });
+  }
 
   try {
     const result = await query(
       `INSERT INTO user_reports (user_id, query_id, report_type)
        VALUES ($1, $2, $3)
        RETURNING *`,
-      [userId || null, finalQueryId, reportType]
+      [userId || null, queryId, reportType]
     );
 
     res.json({ success: true, report: result.rows[0] });
