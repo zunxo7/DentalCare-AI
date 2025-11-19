@@ -186,6 +186,23 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
         }
     }, []);
 
+    // Set viewport height for mobile browsers (accounts for browser UI bars)
+    useEffect(() => {
+        const setViewportHeight = () => {
+            const vh = window.innerHeight * 0.01;
+            document.documentElement.style.setProperty('--vh', `${vh}px`);
+        };
+        
+        setViewportHeight();
+        window.addEventListener('resize', setViewportHeight);
+        window.addEventListener('orientationchange', setViewportHeight);
+        
+        return () => {
+            window.removeEventListener('resize', setViewportHeight);
+            window.removeEventListener('orientationchange', setViewportHeight);
+        };
+    }, []);
+
     useEffect(() => {
         scrollToBottom();
     }, [messages, scrollToBottom]);
@@ -982,7 +999,13 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
     };
 
     return (
-        <div className="flex h-screen bg-background text-text-primary">
+        <div 
+            className="flex bg-background text-text-primary" 
+            style={{ 
+                height: 'calc(var(--vh, 1vh) * 100)',
+                minHeight: '-webkit-fill-available',
+            }}
+        >
             {isNameModalOpen && (
                 <UserNameModal onSubmit={handleUserCreate} isLoading={isCreatingUser} />
             )}
