@@ -46,6 +46,22 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Mobile viewport fixes - account for browser UI bars */
+@supports (height: 100dvh) {
+  html, body {
+    height: 100dvh;
+    height: -webkit-fill-available;
+  }
+}
+
+/* Safe area insets for notched devices */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
 /* Selection color */
 ::selection {
   background-color: rgba(6, 214, 160, 0.3);

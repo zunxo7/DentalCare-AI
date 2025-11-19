@@ -13,9 +13,10 @@ import TablesPage from './pages/debug/TablesPage';
 import LogsPage from './pages/debug/LogsPage';
 import ReportsPage from './pages/debug/ReportsPage';
 import EmbeddingsPage from './pages/debug/EmbeddingsPage';
+import IdlePage from './pages/debug/IdlePage';
 import { BackIcon, FaqIcon, LogoutIcon, MediaIcon, ChatIcon, MenuIcon, DashboardIcon, SpinnerIcon, TablesIcon, LogsIcon, ReportsIcon, EmbeddingsIcon } from './components/icons';
 import { api } from './lib/apiClient';
-import { isAdmin, clearAuth } from './lib/auth';
+import { isAdmin, setAdminStatus } from './lib/auth';
 
 // FIX: Changed JSX.Element to React.ReactElement to resolve "Cannot find namespace 'JSX'" error.
 const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
@@ -38,7 +39,7 @@ const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 
 
 const App: React.FC = () => {
     return (
-        <div className="min-h-screen bg-background font-sans">
+        <div className="bg-background font-sans" style={{ minHeight: '100dvh' }}>
             <HashRouter>
                 <AppContent />
             </HashRouter>
@@ -88,10 +89,33 @@ const AppContent: React.FC = () => {
     }, [showToast]);
 
     useEffect(() => {
-        if (isAuthenticated) {
-            fetchData();
-        }
-    }, [fetchData, isAuthenticated]);
+        // Always fetch FAQs and media (needed for chatbot to work)
+        // Only fetch stats if authenticated (dashboard-only data)
+        const loadData = async () => {
+            if (!isAuthenticated) {
+                // For non-authenticated users, only fetch FAQs and media
+                try {
+                    setLoading(true);
+                    const [faqsData, mediaData] = await Promise.all([
+                        api.getFaqs(),
+                        api.getMedia()
+                    ]);
+                    setFaqs(faqsData || []);
+                    setMedia(mediaData || []);
+                } catch (error: any) {
+                    console.error("Error fetching FAQs/media:", error);
+                    const errorText = error?.message || "An unknown error occurred.";
+                    showToast(`Failed to load FAQs: ${errorText}`, 'error');
+                } finally {
+                    setLoading(false);
+                }
+            } else {
+                // For authenticated users, fetch everything including stats
+                fetchData();
+            }
+        };
+        loadData();
+    }, [fetchData, isAuthenticated, showToast]);
 
     // Close mobile menu if clicking outside
     useEffect(() => {
@@ -107,13 +131,11 @@ const AppContent: React.FC = () => {
     }, []);
 
     const handleLogout = () => {
-        clearAuth();
+        // Set admin status to false without clearing localStorage (preserves userId and userName)
+        setAdminStatus(false);
         setIsAuthenticated(false);
-        // Using window.location.hash directly ensures the URL changes before the next
-        // React render cycle. This prevents a race condition where the ProtectedRoute
-        // (on a dashboard page) would redirect to /login before the navigation to /chat
-        // could complete.
-        window.location.hash = '/chat';
+        // Navigate to chat page
+        navigate('/chat');
     };
     
     const incrementFaqCount = useCallback(async (faqId: number) => {
@@ -136,6 +158,7 @@ const AppContent: React.FC = () => {
         if (location.pathname.includes('/debug/logs')) return 'Logs';
         if (location.pathname.includes('/debug/reports')) return 'Reports';
         if (location.pathname.includes('/debug/embeddings')) return 'Embeddings';
+        if (location.pathname.includes('/debug/idle')) return 'Keep-Alive';
         if (location.pathname.includes('/dashboard')) return 'Dashboard';
         return 'Assistant';
     };
@@ -154,7 +177,7 @@ const AppContent: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col h-screen">
+        <div className="flex flex-col" style={{ height: '100dvh', minHeight: '100dvh', maxHeight: '100dvh' }}>
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             {isDashboard && isAuthenticated && (
                  <header className="bg-surface p-4 flex justify-between items-center border-b border-border shadow-md z-10">
@@ -202,6 +225,24 @@ const AppContent: React.FC = () => {
                                     : 'bg-surface-light text-text-primary hover:bg-primary hover:text-background'
                                 }`}>
                                     <EmbeddingsIcon className="w-4 h-4 flex-shrink-0" /> <span>Embeddings</span>
+                                </button>
+                                <button onClick={() => navigate('/dashboard/debug/idle')} className={`px-4 py-2 rounded-full font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9 ${
+                                  location.pathname.includes('/debug/idle')
+                                    ? 'bg-primary text-background'
+                                    : 'bg-surface-light text-text-primary hover:bg-primary hover:text-background'
+                                }`}>
+                                    <svg 
+                                        className="w-4 h-4 flex-shrink-0" 
+                                        viewBox="0 0 24 24" 
+                                        fill="currentColor" 
+                                        stroke="currentColor" 
+                                        strokeWidth="2" 
+                                        strokeLinecap="round" 
+                                        strokeLinejoin="round"
+                                    >
+                                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                                    </svg>
+                                    <span>Keep Alive</span>
                                 </button>
                                 <button onClick={handleLogout} className="bg-accent text-white px-4 py-2 rounded-full hover:bg-accent-hover transition-colors flex items-center justify-center gap-2 text-sm font-semibold min-w-[100px] h-9"><LogoutIcon className="w-4 h-4 flex-shrink-0" /> <span>Logout</span></button>
                             </>
@@ -261,6 +302,24 @@ const AppContent: React.FC = () => {
                                                 ? 'bg-primary/20 text-primary'
                                                 : 'hover:bg-surface-light'
                                             }`}><EmbeddingsIcon /> Embeddings</button></li>
+                                            <li><button onClick={() => handleMobileNav('/dashboard/debug/idle')} className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
+                                              location.pathname.includes('/debug/idle')
+                                                ? 'bg-primary/20 text-primary'
+                                                : 'hover:bg-surface-light text-text-primary'
+                                            }`}>
+                                                <svg 
+                                                    className="w-4 h-4 flex-shrink-0" 
+                                                    viewBox="0 0 24 24" 
+                                                    fill="currentColor" 
+                                                    stroke="currentColor" 
+                                                    strokeWidth="2" 
+                                                    strokeLinecap="round" 
+                                                    strokeLinejoin="round"
+                                                >
+                                                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                                                </svg>
+                                                Keep Alive
+                                            </button></li>
                                             <li className="my-2 border-t border-border"></li>
                                             <li><button onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light text-accent transition-colors"><LogoutIcon /> Logout</button></li>
                                         </>
@@ -309,6 +368,7 @@ const AppContent: React.FC = () => {
                     <Route path="/dashboard/debug/logs" element={<ProtectedRoute><LogsPage showToast={showToast} /></ProtectedRoute>} />
                     <Route path="/dashboard/debug/reports" element={<ProtectedRoute><ReportsPage showToast={showToast} /></ProtectedRoute>} />
                     <Route path="/dashboard/debug/embeddings" element={<ProtectedRoute><EmbeddingsPage showToast={showToast} /></ProtectedRoute>} />
+                    <Route path="/dashboard/debug/idle" element={<ProtectedRoute><IdlePage showToast={showToast} /></ProtectedRoute>} />
                     <Route path="/dashboard/debug" element={<Navigate to="/dashboard/debug/tables" replace />} />
                     <Route path="/" element={<Navigate to="/chat" replace />} />
                     <Route path="*" element={<Navigate to="/chat" replace />} />

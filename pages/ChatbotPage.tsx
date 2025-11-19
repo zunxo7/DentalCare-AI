@@ -186,23 +186,6 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
         }
     }, []);
 
-    // Set viewport height for mobile browsers (accounts for browser UI bars)
-    useEffect(() => {
-        const setViewportHeight = () => {
-            const vh = window.innerHeight * 0.01;
-            document.documentElement.style.setProperty('--vh', `${vh}px`);
-        };
-        
-        setViewportHeight();
-        window.addEventListener('resize', setViewportHeight);
-        window.addEventListener('orientationchange', setViewportHeight);
-        
-        return () => {
-            window.removeEventListener('resize', setViewportHeight);
-            window.removeEventListener('orientationchange', setViewportHeight);
-        };
-    }, []);
-
     useEffect(() => {
         scrollToBottom();
     }, [messages, scrollToBottom]);
@@ -507,12 +490,9 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
 
     useEffect(() => {
         const fetchReportCategories = async () => {
-            // Only fetch report categories if user is admin
-            if (!isAdmin()) {
-                return;
-            }
+            // Fetch report categories for all users (needed for reporting messages)
             try {
-                const response = await debugFetch('/api/debug/report-categories');
+                const response = await fetch('/api/report-categories');
                 const data = await response.json();
                 if (data.success) {
                     // Extract just the category names, sorted by order
@@ -528,7 +508,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
             }
         };
         fetchReportCategories();
-    }, [isAdmin]);
+    }, []);
 
     const handleDeleteConversation = async (id: number) => {
         const originalConversations = [...conversations];
@@ -999,13 +979,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
     };
 
     return (
-        <div 
-            className="flex bg-background text-text-primary" 
-            style={{ 
-                height: 'calc(var(--vh, 1vh) * 100)',
-                minHeight: '-webkit-fill-available',
-            }}
-        >
+        <div className="flex bg-background text-text-primary" style={{ height: '100dvh', minHeight: '100dvh', maxHeight: '100dvh' }}>
             {isNameModalOpen && (
                 <UserNameModal onSubmit={handleUserCreate} isLoading={isCreatingUser} />
             )}

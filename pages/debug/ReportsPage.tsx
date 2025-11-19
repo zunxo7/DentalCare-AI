@@ -28,9 +28,10 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ showToast }) => {
   const fetchReports = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const response = await api.getReports();
-      if (response.success) {
-        setReports(response.reports);
+      const response = await debugFetch('/api/reports');
+      const data = await response.json();
+      if (data.success) {
+        setReports(data.reports);
       }
     } catch (error: any) {
       console.error('Error fetching reports:', error);
@@ -202,7 +203,15 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ showToast }) => {
 
   const handleUpdateStatus = async (reportId: number, status: 'resolved' | 'active') => {
     try {
-      await api.updateReportStatus(reportId, status);
+      const response = await debugFetch(`/api/reports/${reportId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to update report status');
+      }
       fetchReports();
       showToast(`Report marked as ${status}`, 'success');
     } catch (error: any) {
@@ -212,7 +221,13 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ showToast }) => {
 
   const handleDeleteReport = async (reportId: number) => {
     try {
-      await api.deleteReport(reportId);
+      const response = await debugFetch(`/api/reports/${reportId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to delete report');
+      }
       fetchReports();
       showToast('Report deleted', 'success');
       setDeleteModalState({ isOpen: false, reportId: null, isDeleteAll: false });

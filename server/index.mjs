@@ -43,12 +43,22 @@ async function calculateEmbedding(text) {
 }
 
 async function query(text, params) {
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     const result = await client.query(text, params);
     return result;
+  } catch (err) {
+    console.error('[ERROR] Database query error:', err.message);
+    console.error('[ERROR] Query:', text);
+    if (params && params.length > 0) {
+      console.error('[ERROR] Params:', params);
+    }
+    throw err;
   } finally {
+    if (client) {
     client.release();
+    }
   }
 }
 
@@ -359,8 +369,9 @@ app.get('/api/faqs', async (_req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    console.error('Error fetching FAQs:', err);
-    res.status(500).json({ error: 'Failed to fetch FAQs' });
+    console.error('[ERROR] Error fetching FAQs:', err.message);
+    console.error('[ERROR] Stack:', err.stack);
+    res.status(500).json({ error: 'Failed to fetch FAQs', details: err.message });
   }
 });
 
@@ -464,8 +475,9 @@ app.get('/api/media', async (_req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    console.error('Error fetching media:', err);
-    res.status(500).json({ error: 'Failed to fetch media' });
+    console.error('[ERROR] Error fetching media:', err.message);
+    console.error('[ERROR] Stack:', err.stack);
+    res.status(500).json({ error: 'Failed to fetch media', details: err.message });
   }
 });
 
@@ -573,8 +585,9 @@ app.get('/api/stats', async (_req, res) => {
       conversationTime,
     });
   } catch (err) {
-    console.error('Error fetching stats:', err);
-    res.status(500).json({ error: 'Failed to fetch stats' });
+    console.error('[ERROR] Error fetching stats:', err.message);
+    console.error('[ERROR] Stack:', err.stack);
+    res.status(500).json({ error: 'Failed to fetch stats', details: err.message });
   }
 });
 
@@ -770,9 +783,12 @@ app.post('/api/reset-all-user-data', async (_req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Reset user-related data (messages, conversations, users)
     await client.query(
       'TRUNCATE TABLE chat_messages, conversations, users RESTART IDENTITY CASCADE'
     );
+    // Also reset FAQ counters (asked_count) to 0
+    await client.query('UPDATE faqs SET asked_count = 0');
     await client.query('COMMIT');
     res.json({ success: true });
   } catch (err) {
@@ -1520,7 +1536,22 @@ app.delete('/api/reports', requireAdmin, async (req, res) => {
 
 // ========== REPORT CATEGORIES ENDPOINTS ==========
 
-// Get all report categories
+// Get all report categories (public endpoint - needed for users to report messages)
+app.get('/api/report-categories', async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT name, display_order FROM report_categories ORDER BY display_order, name`,
+      []
+    );
+
+    res.json({ success: true, categories: result.rows.map(r => ({ name: r.name, order: r.display_order })) });
+  } catch (err) {
+    console.error('Error fetching categories:', err);
+    res.status(500).json({ error: 'Failed to fetch categories', details: err.message });
+  }
+});
+
+// Admin endpoint for managing report categories (kept for backward compatibility)
 app.get('/api/debug/report-categories', requireAdmin, async (req, res) => {
   try {
     const result = await query(

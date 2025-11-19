@@ -14,10 +14,23 @@ function getAdminPassword(): string | null {
   return import.meta.env.VITE_ADMIN_PASSWORD || null;
 }
 
-// Check if URL is a debug or reports endpoint
-function isAdminEndpoint(url: string | Request): boolean {
+// Check if URL is a debug or reports GET endpoint (admin-only)
+// POST /api/reports is public (users can submit reports)
+function isAdminEndpoint(url: string | Request, method?: string): boolean {
   const urlString = typeof url === 'string' ? url : url.url;
-  return urlString.includes('/api/debug/') || urlString.includes('/api/reports');
+  const requestMethod = method || (typeof url === 'object' && 'method' in url ? url.method : undefined);
+  
+  // All debug endpoints require admin
+  if (urlString.includes('/api/debug/')) {
+    return true;
+  }
+  
+  // Only GET /api/reports requires admin (POST is public for users to submit reports)
+  if (urlString.includes('/api/reports')) {
+    return requestMethod === 'GET' || requestMethod === 'PUT' || requestMethod === 'DELETE';
+  }
+  
+  return false;
 }
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
@@ -26,8 +39,9 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
     ...(init && init.headers),
   };
 
-  // Add admin password header for debug/reports endpoints
-  if (isAdminEndpoint(input)) {
+  // Add admin password header for admin-only endpoints
+  const method = init?.method || (typeof input === 'object' && 'method' in input ? input.method : undefined);
+  if (isAdminEndpoint(input, method)) {
     const adminPassword = getAdminPassword();
     if (adminPassword) {
       headers['x-admin-password'] = adminPassword;
