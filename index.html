@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0F172A">
+    <title>DentalCare AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            colors: {
+              'background': '#0A0E1A',      // Darker navy
+              'surface': '#151B2E',         // Dark navy
+              'surface-light': '#1E2740',   // Lighter navy
+              'primary': '#06D6A0',         // Vibrant teal
+              'primary-hover': '#1BE9B6',   // Lighter teal
+              'secondary': '#118AB2',       // Blue
+              'accent': '#EF476F',          // Pink
+              'accent-hover': '#FF6B94',    // Light pink
+              'text-primary': '#FEFEFE',    // Almost white
+              'text-secondary': '#8B9DC3',  // Muted blue-gray
+              'border': '#1E2740',          // Border color
+              'glow': '#06D6A0',            // Glow color
+            },
+            animation: {
+                'fade-in-down': 'fadeInDown 0.3s ease-out forwards',
+                'fade-in-up': 'fadeInUp 0.4s ease-out forwards',
+            },
+            keyframes: {
+                fadeInDown: {
+                    '0%': { opacity: 0, transform: 'translateY(-15px)' },
+                    '100%': { opacity: 1, transform: 'translateY(0)' },
+                },
+                fadeInUp: {
+                    '0%': { opacity: 0, transform: 'translateY(20px)' },
+                    '100%': { opacity: 1, transform: 'translateY(0)' },
+                }
+            },
+            boxShadow: {
+              'glow-primary': '0 0 20px 0 rgba(6, 214, 160, 0.4)',
+              'glow-primary-lg': '0 0 30px 0 rgba(6, 214, 160, 0.6)',
+              'glow-accent': '0 0 20px 0 rgba(239, 71, 111, 0.3)',
+              'inner-glow': 'inset 0 0 20px rgba(6, 214, 160, 0.1)',
+            },
+            backgroundImage: {
+              'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
+              'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
+            }
+          },
+        },
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.29.1",
+    "react-router-dom": "https://aistudiocdn.com/react-router-dom@^7.9.6",
+  }
+}
+</script>
+<link rel="stylesheet" href="/styles.css">
+</head>
+  <body class="bg-background text-text-primary antialiased">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,76 @@
+/* Global scrollbar styling + opt-in class */
+*,
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #06D6A0 transparent;
+}
+
+*::-webkit-scrollbar,
+.custom-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+*::-webkit-scrollbar-track,
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb,
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #06D6A0, #118AB2);
+  border-radius: 9999px;
+  border: 2px solid #0A0E1A;
+}
+
+*::-webkit-scrollbar-thumb:hover,
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #1BE9B6, #1499c6);
+}
+
+.slide-in-left {
+  animation: slideInLeft 0.3s ease-out forwards;
+}
+
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* Smooth page transitions */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Mobile viewport fixes - account for browser UI bars */
+@supports (height: 100dvh) {
+  html, body {
+    height: 100dvh;
+    height: -webkit-fill-available;
+  }
+}
+
+/* Safe area insets for notched devices */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* Selection color */
+::selection {
+  background-color: rgba(6, 214, 160, 0.3);
+  color: #FEFEFE;
+}
+
+/* Smooth focus transitions */
+* {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
