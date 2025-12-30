@@ -74,6 +74,8 @@ The system uses a hybrid approach:
 ### Admin Commands
 - Type `/debug` in the chatbot to navigate to the Reports page (admin only)
 
+---
+
 ## 📁 Project Structure
 
 ```
