@@ -250,80 +250,157 @@ const SAFE_FALLBACKS = {
 };
 
 const EARLY_RESPONSES = {
-  greeting: {
-    english: 'Hello! How can I help you with dental care today?',
+  GREETING: {
+    english: 'Hello! How can I help you with your dental care today?',
     urdu: 'سلام! میں آپ کی دانتوں کی دیکھ بھال میں کیسے مدد کر سکتا ہوں؟',
     roman: 'AOA! Main aap ki danton ki dekh bhaal mein kaise madad kar sakta hoon?',
   },
-  bot_name: {
-    english: 'My name is DentalClinic AI.',
-    urdu: 'میرا نام DentalClinic AI ہے۔',
-    roman: 'Mera naam DentalClinic AI hai.',
+  META: {
+    english: 'I am the DentalCare AI Assistant here to help with your orthodontic questions.',
+    urdu: 'میں ڈینٹل کیئر اے آئی اسسٹنٹ ہوں جو آپ کے سوالات میں مدد کے لیے یہاں موجود ہوں۔',
+    roman: 'Main DentalCare AI Assistant hoon jo aap ke sawalat mein madad ke liye yahan mojood hoon.',
   },
-  irrelevant: {
-    english: 'I can only answer orthodontic questions. Please ask something related to orthodontics.',
-    urdu: 'میں صرف آرتھوڈونٹکس سے متعلق سوالات کا جواب دے سکتا ہوں۔',
-    roman: 'Main sirf orthodontic sawalat ka jawab de sakta hoon.',
+  IRRELEVANT: {
+    english: 'I focus only on dental and orthodontic care. Please ask something related to teeth or braces.',
+    urdu: 'میں صرف دانتوں اور آرتھوڈونٹکس سے متعلق سوالات کا جواب دے سکتا ہوں۔',
+    roman: 'Main sirf danton aur braces se mutaliq sawalat ka jawab de sakta hoon.',
   },
 };
 
-async function classifyQueryType(text: string, userName: string): Promise<'greeting' | 'bot_name' | 'user_name' | 'irrelevant' | 'none'> {
+
+type RouteCategory = 'GREETING' | 'META' | 'IRRELEVANT' | 'EDUCATION' | 'FAQ' | 'GENERAL';
+
+async function strictRouter(canonicalIntent: string, userName: string, openai: OpenAI): Promise<RouteCategory> {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    console.warn('OpenRouter API key not found, skipping classification');
-    return 'none';
+
+  // Try OpenRouter first
+  if (apiKey) {
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': process.env.VITE_APP_URL || 'http://localhost:3000',
+        },
+        body: JSON.stringify({
+          model: 'google/gemma-3-27b-it:free', // User preferred model
+          messages: [
+            {
+              role: 'system',
+              content: `You are a STRICT request router.
+
+You will be given a CANONICAL INTENT.
+Your task is to decide what kind of response the system should produce.
+
+You MUST output EXACTLY ONE of the following labels:
+- GREETING
+- META
+- IRRELEVANT
+- EDUCATION
+- FAQ
+- GENERAL
+
+DO NOT output anything else.
+DO NOT explain your decision.
+
+DEFINITIONS (FOLLOW STRICTLY):
+
+GREETING:
+- Greetings or salutations only.
+- Examples: hi, hello, salam, hey.
+
+META:
+- Questions about the assistant or the user.
+- Examples: what is your name, who are you, what is my name.
+
+IRRELEVANT:
+- Not related to dentistry or oral health.
+- Spam, jokes, random topics, nonsense.
+
+EDUCATION:
+- Asking WHAT something is, WHAT it does, WHY it exists, or its function or purpose.
+- Explanations, overviews, definitions.
+- NOT asking how to fix or treat something.
+
+FAQ:
+- A braces-related problem or how-to.
+- Mechanical issues, symptoms, or actions.
+- Examples: wire poking, bracket loose, how to use wax, pain from braces.
+
+GENERAL:
+- Dental topics outside orthodontics.
+- Veneers, crowns, implants, cosmetic dentistry, general tooth pain not tied to braces.
+
+IMPORTANT RULES:
+- If the intent is explanatory → EDUCATION.
+- If the intent is a braces problem or how-to → FAQ.
+- If the intent is dental but NOT orthodontics → GENERAL.
+- If there is ANY doubt → EDUCATION.
+- NEVER choose FAQ unless the intent clearly describes a braces-related issue.
+
+OUTPUT FORMAT:
+Return ONLY ONE WORD from the list above.`
+            },
+            {
+              role: 'user',
+              content: `CANONICAL INTENT: "${canonicalIntent}"`
+            }
+          ],
+          temperature: 0.1,
+          max_tokens: 10,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const result = data.choices?.[0]?.message?.content?.trim().toUpperCase();
+        if (['GREETING', 'META', 'IRRELEVANT', 'EDUCATION', 'FAQ', 'GENERAL'].includes(result)) {
+          return result as RouteCategory;
+        }
+      } else {
+        console.error('OpenRouter API error:', response.statusText);
+      }
+    } catch (error) {
+      console.error('OpenRouter routing failed:', error);
+    }
   }
 
+  // Fallback to OpenAI
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': process.env.VITE_APP_URL || 'http://localhost:3000',
-      },
-      body: JSON.stringify({
-        model: 'google/gemma-3-27b-it:free',
-        messages: [
-          {
-            role: 'system',
-            content: `Classify the user query into ONE of these categories:
-- "greeting" if it's a greeting (hello, hi, salam, etc.)
-- "bot_name" if asking for your name or who you are
-- "user_name" if asking for their own name (the user's name is: ${userName})
-- "irrelevant" if it's irrelevant to orthodontics, inappropriate, offensive, or spam
-- "none" if it's a legitimate orthodontic/dental question
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a STRICT request router. Output EXACTLY ONE label: GREETING, META, IRRELEVANT, EDUCATION, FAQ, GENERAL.
 
-Respond with ONLY the category name, nothing else.`,
-          },
-          {
-            role: 'user',
-            content: text,
-          },
-        ],
-        temperature: 0.1,
-        max_tokens: 10,
-      }),
+Definitions:
+GREETING: Salutations.
+META: Questions about bot/user.
+IRRELEVANT: Non-dental topics.
+EDUCATION: Explaining what/why (definitions, purposes).
+FAQ: Specific braces problems/how-tos.
+GENERAL: Non-orthodontic dental topics.
+
+Rule: Doubt -> EDUCATION.`
+        },
+        { role: 'user', content: `Intent: "${canonicalIntent}"` }
+      ],
+      temperature: 0.1,
+      max_tokens: 10,
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-      console.error('OpenRouter API error details:', errorData);
-      throw new Error(`OpenRouter API error: ${response.status} - ${JSON.stringify(errorData)}`);
+    const result = response.choices[0]?.message?.content?.trim().toUpperCase();
+    if (['GREETING', 'META', 'IRRELEVANT', 'EDUCATION', 'FAQ', 'GENERAL'].includes(result)) {
+      return result as RouteCategory;
     }
-
-    const data = await response.json();
-    const result = data.choices?.[0]?.message?.content?.trim().toLowerCase();
-
-    if (result === 'greeting' || result === 'bot_name' || result === 'user_name' || result === 'irrelevant') {
-      return result as 'greeting' | 'bot_name' | 'user_name' | 'irrelevant';
-    }
-
-    return 'none';
   } catch (error) {
-    console.error('OpenRouter classification failed:', error);
-    return 'none';
+    console.error('OpenAI routing failed:', error);
   }
+
+  // Ultimate fallback
+  return 'EDUCATION';
 }
 
 async function translateToEnglish(text: string, sourceLanguage: 'english' | 'urdu' | 'roman', openai: OpenAI): Promise<string> {
@@ -405,16 +482,13 @@ export default async function handler(req: Request) {
     console.log(formatted);
   };
 
-  // Log request for Vercel visibility
   log(`[CHAT_REQUEST] ${req.method} ${req.url}`);
 
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // Get Turso client
     const tursoUrl = process.env.TURSO_DATABASE_URL || 'libsql://dentalcare-ai-zunxo7.aws-ap-south-1.turso.io';
     const tursoAuthToken = process.env.TURSO_AUTH_TOKEN || '';
     const db = createClient({
@@ -422,14 +496,12 @@ export default async function handler(req: Request) {
       authToken: tursoAuthToken || undefined,
     });
 
-    // Get OpenAI API key
     const openaiApiKey = process.env.OPENAI_API_KEY;
     if (!openaiApiKey) {
       throw new Error('OPENAI_API_KEY not set');
     }
     const openai = new OpenAI({ apiKey: openaiApiKey });
 
-    // Parse request
     const { message, userName, userId }: BotRequest = await req.json();
 
     if (!message || !userName) {
@@ -439,213 +511,166 @@ export default async function handler(req: Request) {
       );
     }
 
-    // Generate query ID
     const queryId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
-    // Normalize input
+    // Input Validation
     const MAX_INPUT_LENGTH = 1000;
     const trimmed = message.trim();
     if (!trimmed) {
-      const fallback = SAFE_FALLBACKS.english;
       return new Response(
-        JSON.stringify({
-          text: fallback,
-          mediaUrls: [],
-          faqId: null,
-          queryId,
-        } as BotResponse),
+        JSON.stringify({ text: SAFE_FALLBACKS.english, mediaUrls: [], faqId: null, queryId, pipelineLogs } as BotResponse),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const normalized = isValidInput(trimmed, MAX_INPUT_LENGTH)
-      ? trimmed
-      : truncateText(trimmed, MAX_INPUT_LENGTH);
+    const normalized = isValidInput(trimmed, MAX_INPUT_LENGTH) ? trimmed : truncateText(trimmed, MAX_INPUT_LENGTH);
 
-    // Detect language
+    // 1. Language Detection
     const language = detectLanguage(normalized);
     log('[PIPELINE] Language detected:', language);
-    log('[PIPELINE] Original query:', normalized);
 
-    // Fetch FAQs and media from database
-    // Include 'intent' field if it exists (for future use)
-    const [faqs, media] = await Promise.all([
-      dbHelpers.selectAll(db, 'faqs', 'id, question, answer, embedding, media_ids, intent'),
-      dbHelpers.selectAll(db, 'media', 'id, title, url, type'),
-    ]);
-    log('[PIPELINE] Total FAQs in database:', faqs.length);
-
-    // Classify query type
-    const queryType = await classifyQueryType(normalized, userName);
-    log('[PIPELINE] Query type:', queryType);
-
-    if (queryType === 'greeting') {
-      const response = EARLY_RESPONSES.greeting[language] || EARLY_RESPONSES.greeting.english;
-      return new Response(
-        JSON.stringify({
-          text: response,
-          mediaUrls: [],
-          faqId: null,
-          queryId,
-        } as BotResponse),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    if (queryType === 'bot_name') {
-      const response = EARLY_RESPONSES.bot_name[language] || EARLY_RESPONSES.bot_name.english;
-      return new Response(
-        JSON.stringify({
-          text: response,
-          mediaUrls: [],
-          faqId: null,
-          queryId,
-        } as BotResponse),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    if (queryType === 'user_name') {
-      const response = `Your name is ${userName}.`;
-      return new Response(
-        JSON.stringify({
-          text: response,
-          mediaUrls: [],
-          faqId: null,
-          queryId,
-        } as BotResponse),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    if (queryType === 'irrelevant') {
-      const response = EARLY_RESPONSES.irrelevant[language] || EARLY_RESPONSES.irrelevant.english;
-      return new Response(
-        JSON.stringify({
-          text: response,
-          mediaUrls: [],
-          faqId: null,
-          queryId,
-        } as BotResponse),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Translate to English if needed
+    // 2. Translation to English (if needed)
     let englishQuery = normalized;
     if (language !== 'english') {
       englishQuery = await translateToEnglish(normalized, language, openai);
       log('[PIPELINE] Translated to English:', englishQuery);
     }
 
-    // NEW PIPELINE: Rewrite to canonical intent
+    // 3. Rewrite to Canonical Intent
     const canonicalIntent = await rewriteToCanonicalIntent(englishQuery, openai);
     log('[PIPELINE] Canonical intent:', canonicalIntent);
 
-    // FAQ matching using canonical intent
+    // 4. Strict Routing
+    const route = await strictRouter(canonicalIntent, userName, openai);
+    log('[PIPELINE] Route selected:', route);
+
+    let finalAnswer = '';
+    let selectedMedia: string[] = [];
     let selectedFAQ: any = null;
-    let faqAnswer: string | null = null;
 
-    try {
-      // Embed the canonical intent (not the translated query)
-      const intentEmbeddingResponse = await openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: canonicalIntent,
-      });
-      const intentEmbedding = intentEmbeddingResponse.data[0]?.embedding || [];
-
-      if (intentEmbedding.length > 0) {
-        // Semantic search: Get top 5 FAQs (no threshold filtering)
-        const topFAQs = getTopFAQs(intentEmbedding, faqs, 5);
-
-        // Log top 5 FAQs with similarity scores
-        log('[PIPELINE] Top 5 FAQs:');
-        topFAQs.forEach((item, idx) => {
-          log(`  ${idx + 1}. FAQ #${item.faq.id} | Intent: "${item.faq.intent}" | Similarity: ${(item.similarity * 100).toFixed(1)}%`);
-        });
-
-        // LLM selects best FAQ or NONE
-        selectedFAQ = await selectBestFAQWithLLM(canonicalIntent, topFAQs, openai);
-
-        if (selectedFAQ) {
-          faqAnswer = selectedFAQ.answer;
-          log('[PIPELINE] ✅ Selected FAQ:', {
-            id: selectedFAQ.id,
-            intent: selectedFAQ.intent,
-            question: selectedFAQ.question.substring(0, 50) + '...',
-            mediaCount: selectedFAQ.media_ids?.length || 0
-          });
-        } else {
-          log('[PIPELINE] ❌ No FAQ match - generating answer with LLM');
-        }
+    // 5. Branching Logic
+    switch (route) {
+      case 'GREETING':
+      case 'META':
+      case 'IRRELEVANT': {
+        finalAnswer = EARLY_RESPONSES[route][language] || EARLY_RESPONSES[route].english;
+        break;
       }
-    } catch (error) {
-      log('[PIPELINE] FAQ matching error:', error);
-    }
 
-    // Generate answer
-    let finalAnswer: string;
-    if (faqAnswer) {
-      finalAnswer = faqAnswer;
-    } else {
-      try {
-        const llmResponse = await openai.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are an orthodontic assistant. Provide clear, helpful answers about braces care. Never provide medical diagnosis or prescriptions. Always recommend consulting an orthodontist for specific concerns.',
-            },
-            { role: 'user', content: englishQuery },
-          ],
-        });
-        finalAnswer = llmResponse.choices[0]?.message?.content?.trim() || SAFE_FALLBACKS.english;
-      } catch {
+      case 'EDUCATION': {
+        // Generate educational explanation
+        try {
+          const llmResponse = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content: 'You are an expert orthodontic educator. Explain the concept clearly and concisely. Focus on WHAT it is and WHY it is used. Do not give medical advice.'
+              },
+              { role: 'user', content: `Explain this concept: "${canonicalIntent}"` }
+            ],
+          });
+          finalAnswer = llmResponse.choices[0]?.message?.content?.trim() || SAFE_FALLBACKS.english;
+
+          // Attach Braces Diagram (IDs 5 and 6)
+          const allMedia = await dbHelpers.selectAll(db, 'media', 'id, url');
+          const partsMedia = allMedia.filter((m: any) => m.id === 5 || m.id === 6);
+          selectedMedia = partsMedia.map((m: any) => m.url).filter((url: any) => typeof url === 'string');
+          log('[PIPELINE] Attached educational media (parts/diagrams)');
+        } catch (e) {
+          log('[PIPELINE] Education generation failed', e);
+          finalAnswer = SAFE_FALLBACKS.english;
+        }
+        break;
+      }
+
+      case 'GENERAL': {
+        // Generate general dental response
+        try {
+          const llmResponse = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content: 'You are a helpful dental assistant. Answer the general dental question politely. Mention that you specialize in orthodontics (braces) specifically. Do not give medical diagnosis.'
+              },
+              { role: 'user', content: englishQuery }
+            ],
+          });
+          finalAnswer = llmResponse.choices[0]?.message?.content?.trim() || SAFE_FALLBACKS.english;
+        } catch (e) {
+          finalAnswer = SAFE_FALLBACKS.english;
+        }
+        break;
+      }
+
+      case 'FAQ': {
+        // Existing FAQ Logic
+        try {
+          const [faqs, media] = await Promise.all([
+            dbHelpers.selectAll(db, 'faqs', 'id, question, answer, embedding, media_ids, intent'),
+            dbHelpers.selectAll(db, 'media', 'id, url'),
+          ]);
+
+          const intentEmbeddingResponse = await openai.embeddings.create({
+            model: 'text-embedding-3-small',
+            input: canonicalIntent,
+          });
+          const intentEmbedding = intentEmbeddingResponse.data[0]?.embedding || [];
+
+          if (intentEmbedding.length > 0) {
+            const topFAQs = getTopFAQs(intentEmbedding, faqs, 5);
+            log('[PIPELINE] Top 5 FAQs found');
+
+            selectedFAQ = await selectBestFAQWithLLM(canonicalIntent, topFAQs, openai);
+
+            if (selectedFAQ) {
+              finalAnswer = selectedFAQ.answer;
+              selectedMedia = selectMediaFromLinkedIds(selectedFAQ.media_ids, media);
+              log('[PIPELINE] ✅ FAQ matched:', selectedFAQ.id);
+            } else {
+              log('[PIPELINE] ❌ No specific FAQ selected suitable for intent, generating general response.');
+              const llmResponse = await openai.chat.completions.create({
+                model: 'gpt-4o-mini',
+                messages: [
+                  { role: 'system', content: 'You are an orthodontic assistant. The user has a braces problem. Provide a helpful, safe response. Recommend seeing an orthodontist.' },
+                  { role: 'user', content: englishQuery }
+                ]
+              });
+              finalAnswer = llmResponse.choices[0]?.message?.content?.trim() || SAFE_FALLBACKS.english;
+            }
+          }
+        } catch (e) {
+          log('[PIPELINE] FAQ logic failed', e);
+          finalAnswer = SAFE_FALLBACKS.english;
+        }
+        break;
+      }
+
+      default: {
         finalAnswer = SAFE_FALLBACKS.english;
       }
     }
 
-    // Select media
-    let selectedMedia: string[] = [];
-    if (selectedFAQ) {
-      // Use FAQ's linked media
-      selectedMedia = selectMediaFromLinkedIds(selectedFAQ.media_ids, media);
-      log('[PIPELINE] Media selected from FAQ:', selectedMedia.length, 'items');
-    } else {
-      // Fallback: use canonical intent for keyword matching (not raw query)
-      selectedMedia = selectMediaByKeywords(canonicalIntent, media);
-      log('[PIPELINE] Media selected by keywords:', selectedMedia.length, 'items');
-    }
-
-    // Translate back if needed
-    if (language !== 'english') {
+    // 6. Translate Answer Back (if needed)
+    if (language !== 'english' && !['GREETING', 'META', 'IRRELEVANT'].includes(route)) {
       log('[PIPELINE] Translating answer back to', language);
       finalAnswer = await translateFromEnglish(finalAnswer, language, openai);
     }
 
-    log('[PIPELINE] Final response:', {
-      faqId: selectedFAQ?.id || null,
-      mediaCount: selectedMedia.length,
-      answerLength: finalAnswer.length,
-      language
-    });
-
-    // Return response
-    const response: BotResponse = {
-      text: finalAnswer,
-      mediaUrls: selectedMedia,
-      faqId: selectedFAQ?.id || null,
-      queryId,
-      pipelineLogs,
-    };
-
-    // Log final pipeline result
-    log(`[PIPELINE_DONE] QueryId: ${queryId} | FAQ: ${selectedFAQ?.id || 'NONE'} | Media: ${selectedMedia.length} | Lang: ${language}`);
+    log(`[PIPELINE_DONE] QueryId: ${queryId} | Route: ${route} | Media: ${selectedMedia.length}`);
 
     return new Response(
-      JSON.stringify(response),
+      JSON.stringify({
+        text: finalAnswer,
+        mediaUrls: selectedMedia,
+        faqId: selectedFAQ?.id || null,
+        queryId,
+        pipelineLogs,
+      } as BotResponse),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
+
   } catch (error) {
     log('Chat function error:', error);
     return new Response(
