@@ -23,6 +23,7 @@ interface BotResponse {
   mediaUrls: string[];
   faqId: number | null;
   queryId: string | null;
+  pipelineLogs?: string[];
 }
 
 // Helper functions
@@ -40,16 +41,16 @@ function truncateText(text: string, maxLength: number): string {
 
 function detectLanguage(text: string): 'english' | 'urdu' | 'roman' {
   if (!text || typeof text !== 'string') return 'english';
-  
+
   // Check for Urdu script (Unicode range 0600-06FF)
   if (/[\u0600-\u06FF]/.test(text)) return 'urdu';
-  
+
   // Check for Roman Urdu keywords
   const romanUrduKeywords = ['kaise', 'kya', 'kyu', 'hai', 'hain', 'chahiye', 'kitne', 'mein', 'aap', 'ko', 'ki', 'ke'];
   const normalized = text.toLowerCase();
   const keywordCount = romanUrduKeywords.filter(kw => new RegExp(`\\b${kw}\\b`, 'i').test(normalized)).length;
   if (keywordCount >= 2) return 'roman';
-  
+
   return 'english';
 }
 
@@ -113,7 +114,7 @@ Respond with ONLY the intent phrase, nothing else.`,
       temperature: 0.1,
       max_tokens: 20,
     });
-    
+
     const intent = response.choices[0]?.message?.content?.trim() || '';
     // Clean up any punctuation or extra words
     return intent
@@ -152,15 +153,15 @@ function getTopFAQs(intentEmbedding: number[], faqs: any[], topN: number = 5) {
         }
       }
     }
-    
+
     // Use pure embedding similarity (no lexical matching)
     const similarity = embedding.length > 0 && embedding.length === intentEmbedding.length
       ? cosineSimilarity(intentEmbedding, embedding)
       : 0;
-    
+
     return { faq, similarity };
   });
-  
+
   ranked.sort((a, b) => b.similarity - a.similarity);
   return ranked.slice(0, topN);
 }
@@ -175,7 +176,7 @@ async function selectBestFAQWithLLM(
   openai: OpenAI
 ): Promise<any | null> {
   if (topFAQs.length === 0) return null;
-  
+
   try {
     // Build FAQ list for LLM
     const faqList = topFAQs
@@ -186,7 +187,7 @@ async function selectBestFAQWithLLM(
         return `${index + 1}. ${displayText}`;
       })
       .join('\n');
-    
+
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
@@ -209,14 +210,14 @@ Respond with ONLY the FAQ number (1-${topFAQs.length}) or "NONE", nothing else.`
       temperature: 0.1,
       max_tokens: 10,
     });
-    
+
     const result = response.choices[0]?.message?.content?.trim().toUpperCase();
-    
+
     // Parse response
     if (result === 'NONE') {
       return null;
     }
-    
+
     const match = result.match(/^(\d+)/);
     if (match) {
       const index = parseInt(match[1], 10) - 1;
@@ -224,7 +225,7 @@ Respond with ONLY the FAQ number (1-${topFAQs.length}) or "NONE", nothing else.`
         return topFAQs[index].faq;
       }
     }
-    
+
     // If parsing fails, return null (safe fallback)
     return null;
   } catch (error) {
@@ -308,11 +309,11 @@ Respond with ONLY the category name, nothing else.`,
 
     const data = await response.json();
     const result = data.choices?.[0]?.message?.content?.trim().toLowerCase();
-    
+
     if (result === 'greeting' || result === 'bot_name' || result === 'user_name' || result === 'irrelevant') {
       return result as 'greeting' | 'bot_name' | 'user_name' | 'irrelevant';
     }
-    
+
     return 'none';
   } catch (error) {
     console.error('OpenRouter classification failed:', error);
@@ -366,32 +367,42 @@ function selectMediaFromLinkedIds(faqMediaIds: number[] | undefined, media: any[
 function selectMediaByKeywords(englishQuery: string, media: any[]): string[] {
   if (media.length === 0) return [];
   const normalized = englishQuery.toLowerCase();
-  
-  if (normalized.includes('functions') || normalized.includes('uses') || 
-      (normalized.includes('parts') && (normalized.includes('function') || normalized.includes('use')))) {
+
+  if (normalized.includes('functions') || normalized.includes('uses') ||
+    (normalized.includes('parts') && (normalized.includes('function') || normalized.includes('use')))) {
     const partsMedia = media.filter(m => m.id === 5 || m.id === 6);
     return partsMedia.map(m => m.url).filter(url => url && typeof url === 'string');
   }
-  
+
   if (normalized.includes('brush') || normalized.includes('cleaning')) {
     const brushMedia = media.filter(m => m.id === 1 || m.id === 3);
     return brushMedia.map(m => m.url).filter(url => url && typeof url === 'string');
   }
-  
+
   if (normalized.includes('wire') && (normalized.includes('poke') || normalized.includes('sharp'))) {
     const wireMedia = media.filter(m => m.id === 2 || m.id === 4);
     return wireMedia.map(m => m.url).filter(url => url && typeof url === 'string');
   }
-  
+
   if (normalized.includes('parts') || normalized.includes('component')) {
     const partsMedia = media.filter(m => m.id === 5 || m.id === 6);
     return partsMedia.map(m => m.url).filter(url => url && typeof url === 'string');
   }
-  
+
   return [];
 }
 
 export default async function handler(req: Request) {
+  const pipelineLogs: string[] = [];
+  const log = (msg: string, ...args: any[]) => {
+    const formatted = args.length > 0 ? `${msg} ${JSON.stringify(args)}` : msg;
+    pipelineLogs.push(formatted);
+    console.log(formatted);
+  };
+
+  // Log request for Vercel visibility
+  log(`[CHAT_REQUEST] ${req.method} ${req.url}`);
+
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -415,7 +426,7 @@ export default async function handler(req: Request) {
 
     // Parse request
     const { message, userName, userId }: BotRequest = await req.json();
-    
+
     if (!message || !userName) {
       return new Response(
         JSON.stringify({ error: 'message and userName are required' }),
@@ -441,15 +452,15 @@ export default async function handler(req: Request) {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
+
     const normalized = isValidInput(trimmed, MAX_INPUT_LENGTH)
       ? trimmed
       : truncateText(trimmed, MAX_INPUT_LENGTH);
 
     // Detect language
     const language = detectLanguage(normalized);
-    console.log('[PIPELINE] Language detected:', language);
-    console.log('[PIPELINE] Original query:', normalized);
+    log('[PIPELINE] Language detected:', language);
+    log('[PIPELINE] Original query:', normalized);
 
     // Fetch FAQs and media from database
     // Include 'intent' field if it exists (for future use)
@@ -457,12 +468,12 @@ export default async function handler(req: Request) {
       dbHelpers.selectAll(db, 'faqs', 'id, question, answer, embedding, media_ids, intent'),
       dbHelpers.selectAll(db, 'media', 'id, title, url, type'),
     ]);
-    console.log('[PIPELINE] Total FAQs in database:', faqs.length);
+    log('[PIPELINE] Total FAQs in database:', faqs.length);
 
     // Classify query type
     const queryType = await classifyQueryType(normalized, userName);
-    console.log('[PIPELINE] Query type:', queryType);
-    
+    log('[PIPELINE] Query type:', queryType);
+
     if (queryType === 'greeting') {
       const response = EARLY_RESPONSES.greeting[language] || EARLY_RESPONSES.greeting.english;
       return new Response(
@@ -475,7 +486,7 @@ export default async function handler(req: Request) {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
+
     if (queryType === 'bot_name') {
       const response = EARLY_RESPONSES.bot_name[language] || EARLY_RESPONSES.bot_name.english;
       return new Response(
@@ -488,7 +499,7 @@ export default async function handler(req: Request) {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
+
     if (queryType === 'user_name') {
       const response = `Your name is ${userName}.`;
       return new Response(
@@ -501,7 +512,7 @@ export default async function handler(req: Request) {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
+
     if (queryType === 'irrelevant') {
       const response = EARLY_RESPONSES.irrelevant[language] || EARLY_RESPONSES.irrelevant.english;
       return new Response(
@@ -519,17 +530,17 @@ export default async function handler(req: Request) {
     let englishQuery = normalized;
     if (language !== 'english') {
       englishQuery = await translateToEnglish(normalized, language, openai);
-      console.log('[PIPELINE] Translated to English:', englishQuery);
+      log('[PIPELINE] Translated to English:', englishQuery);
     }
 
     // NEW PIPELINE: Rewrite to canonical intent
     const canonicalIntent = await rewriteToCanonicalIntent(englishQuery, openai);
-    console.log('[PIPELINE] Canonical intent:', canonicalIntent);
+    log('[PIPELINE] Canonical intent:', canonicalIntent);
 
     // FAQ matching using canonical intent
     let selectedFAQ: any = null;
     let faqAnswer: string | null = null;
-    
+
     try {
       // Embed the canonical intent (not the translated query)
       const intentEmbeddingResponse = await openai.embeddings.create({
@@ -537,34 +548,34 @@ export default async function handler(req: Request) {
         input: canonicalIntent,
       });
       const intentEmbedding = intentEmbeddingResponse.data[0]?.embedding || [];
-      
+
       if (intentEmbedding.length > 0) {
         // Semantic search: Get top 5 FAQs (no threshold filtering)
         const topFAQs = getTopFAQs(intentEmbedding, faqs, 5);
-        
+
         // Log top 5 FAQs with similarity scores
-        console.log('[PIPELINE] Top 5 FAQs:');
+        log('[PIPELINE] Top 5 FAQs:');
         topFAQs.forEach((item, idx) => {
-          console.log(`  ${idx + 1}. FAQ #${item.faq.id} | Intent: "${item.faq.intent}" | Similarity: ${(item.similarity * 100).toFixed(1)}%`);
+          log(`  ${idx + 1}. FAQ #${item.faq.id} | Intent: "${item.faq.intent}" | Similarity: ${(item.similarity * 100).toFixed(1)}%`);
         });
-        
+
         // LLM selects best FAQ or NONE
         selectedFAQ = await selectBestFAQWithLLM(canonicalIntent, topFAQs, openai);
-        
+
         if (selectedFAQ) {
           faqAnswer = selectedFAQ.answer;
-          console.log('[PIPELINE] ✅ Selected FAQ:', {
+          log('[PIPELINE] ✅ Selected FAQ:', {
             id: selectedFAQ.id,
             intent: selectedFAQ.intent,
             question: selectedFAQ.question.substring(0, 50) + '...',
             mediaCount: selectedFAQ.media_ids?.length || 0
           });
         } else {
-          console.log('[PIPELINE] ❌ No FAQ match - generating answer with LLM');
+          log('[PIPELINE] ❌ No FAQ match - generating answer with LLM');
         }
       }
     } catch (error) {
-      console.error('[PIPELINE] FAQ matching error:', error);
+      log('[PIPELINE] FAQ matching error:', error);
     }
 
     // Generate answer
@@ -594,20 +605,20 @@ export default async function handler(req: Request) {
     if (selectedFAQ) {
       // Use FAQ's linked media
       selectedMedia = selectMediaFromLinkedIds(selectedFAQ.media_ids, media);
-      console.log('[PIPELINE] Media selected from FAQ:', selectedMedia.length, 'items');
+      log('[PIPELINE] Media selected from FAQ:', selectedMedia.length, 'items');
     } else {
       // Fallback: use canonical intent for keyword matching (not raw query)
       selectedMedia = selectMediaByKeywords(canonicalIntent, media);
-      console.log('[PIPELINE] Media selected by keywords:', selectedMedia.length, 'items');
+      log('[PIPELINE] Media selected by keywords:', selectedMedia.length, 'items');
     }
 
     // Translate back if needed
     if (language !== 'english') {
-      console.log('[PIPELINE] Translating answer back to', language);
+      log('[PIPELINE] Translating answer back to', language);
       finalAnswer = await translateFromEnglish(finalAnswer, language, openai);
     }
-    
-    console.log('[PIPELINE] Final response:', {
+
+    log('[PIPELINE] Final response:', {
       faqId: selectedFAQ?.id || null,
       mediaCount: selectedMedia.length,
       answerLength: finalAnswer.length,
@@ -620,21 +631,26 @@ export default async function handler(req: Request) {
       mediaUrls: selectedMedia,
       faqId: selectedFAQ?.id || null,
       queryId,
+      pipelineLogs,
     };
+
+    // Log final pipeline result
+    log(`[PIPELINE_DONE] QueryId: ${queryId} | FAQ: ${selectedFAQ?.id || 'NONE'} | Media: ${selectedMedia.length} | Lang: ${language}`);
 
     return new Response(
       JSON.stringify(response),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Chat function error:', error);
+    log('Chat function error:', error);
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: 'Internal server error',
         text: SAFE_FALLBACKS.english,
         mediaUrls: [],
         faqId: null,
         queryId: `${Date.now()}-${Math.random().toString(36).substring(7)}`,
+        pipelineLogs,
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

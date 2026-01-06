@@ -10,7 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import type { ChatMessage, FAQ, Media, Conversation, User } from '../types';
 import { api } from '../lib/apiClient';
 import { isAdmin, updateUserInfo, getCurrentUserId, getCurrentUserName, clearAuth } from '../lib/auth';
-import { debugFetch } from '../lib/debugApi';
+
 import {
     BotIcon,
     SendIcon,
@@ -302,10 +302,10 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
             // Check for /debug command
             if (userInput.trim().toLowerCase() === '/debug') {
                 if (isAdmin()) {
-                    navigate('/dashboard/debug/reports');
+                    navigate('/dashboard/reports');
                 } else {
                     // Not admin - redirect to login with return path
-                    navigate('/login?redirect=/dashboard/debug/reports');
+                    navigate('/login?redirect=/dashboard/reports');
                 }
                 if (!messageText) {
                     setInput('');
@@ -365,9 +365,9 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
 
                 // ⬇️ Call Edge Function for bot response (OpenAI key stays server-side)
                 const botResponse = await api.getBotResponse({
-                  message: userInput,
-                  userName: currentUser.name,
-                  userId: currentUser.id,
+                    message: userInput,
+                    userName: currentUser.name,
+                    userId: currentUser.id,
                 });
 
                 if (botResponse.faqId) {
@@ -387,6 +387,12 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                     faqId: botResponse.faqId,
                     mediaUrls,
                 });
+
+                if (botResponse.pipelineLogs && botResponse.pipelineLogs.length > 0) {
+                    console.group('🤖 BOT PIPELINE DEBUG LOGS');
+                    botResponse.pipelineLogs.forEach(log => console.log(log));
+                    console.groupEnd();
+                }
 
                 addMessageToState(botMessagePayload, currentConversationId!);
                 setIsThinking(false);
@@ -430,39 +436,39 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
             localStorage.removeItem('ortho_chat_user_name');
             localStorage.removeItem('isAdmin');
             localStorage.removeItem('ortho_chat_conversations');
-            
+
             // Check localStorage directly
             const authData = localStorage.getItem('dentalcare_auth');
             if (!authData) {
                 setIsNameModalOpen(true);
                 return;
             }
-            
+
             try {
                 const auth = JSON.parse(authData);
                 const userId = auth.userId;
                 const userName = auth.userName;
-                
+
                 // If no userId/userName, show modal (even if admin)
                 if (!userId || !userName) {
                     setIsNameModalOpen(true);
                     return;
                 }
-                
+
                 // Verify with server
                 try {
                     const user = await api.getUser(String(userId));
                     if (user) {
                         setCurrentUser(user);
                         updateUserInfo(user.id, user.name);
-                        
+
                         // Log login only once per session
                         const sessionLoginKey = `session_login_${user.id}`;
                         if (!sessionStorage.getItem(sessionLoginKey)) {
                             sessionStorage.setItem(sessionLoginKey, 'true');
                             console.log(`[USER] Logged in: ${user.name} (${user.id})`);
                         }
-                        
+
                         loadConversations(user);
                     } else {
                         clearAuth();
@@ -493,7 +499,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
         };
         checkUserSession();
     }, [loadConversations]);
-    
+
 
     useEffect(() => {
         const fetchReportCategories = async () => {
@@ -553,14 +559,14 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
             // Save to auth system only
             updateUserInfo(newUser.id, newUser.name);
             setCurrentUser(newUser);
-            
+
             // Log new user signup (only once per session)
             const sessionSignupKey = `session_signup_${newUser.id}`;
             if (!sessionStorage.getItem(sessionSignupKey)) {
                 sessionStorage.setItem(sessionSignupKey, 'true');
                 console.log(`[USER] Signed up: ${newUser.name} (${newUser.id})`);
             }
-            
+
             // Load conversations immediately after user creation
             await loadConversations(newUser);
         } catch (error: any) {
@@ -634,7 +640,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
 
         // Ensure queryId is present - all reports must have a queryId
         let queryId = reportingMessage.queryId;
-        
+
         // If message doesn't have queryId, try to find it from the conversation
         // Look for the bot message that matches this one (for old messages)
         if (!queryId && reportingMessage.sender === 'bot') {
@@ -670,7 +676,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                 queryId: queryId,
                 reportType,
             };
-            
+
             await api.createReport(reportPayload);
             showToast('Report submitted successfully', 'success');
             setReportModalOpen(false);
@@ -684,7 +690,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
     const renderMessageContent = (message: ChatMessage) => {
         const isUserMessage = message.sender === 'user';
         const boldColorClass = isUserMessage ? 'text-background/90' : 'text-primary';
-        
+
         const renderFormattedText = (text: string) => {
             const applyPattern = (
                 inputNodes: React.ReactNode[],
@@ -754,7 +760,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
 
             return nodes;
         };
-        
+
         return (
             <div>
                 <div className={`space-y-1 text-sm sm:text-base ${isUserMessage ? 'font-bold tracking-wide' : ''}`}>
@@ -810,8 +816,8 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                     (/\.(mp4|mov|webm)$/i.test(url)
                         ? 'video'
                         : /\.(png|jpg|jpeg|gif)$/i.test(url)
-                        ? 'image'
-                        : 'unknown'),
+                            ? 'image'
+                            : 'unknown'),
             };
         });
     };
@@ -831,9 +837,8 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
 
         return (
             <div
-                className={`rounded-3xl ${bubbleBase} p-4 shadow-sm ${
-                    alignRight ? 'rounded-tr-lg' : 'rounded-tl-lg'
-                }`}
+                className={`rounded-3xl ${bubbleBase} p-4 shadow-sm ${alignRight ? 'rounded-tr-lg' : 'rounded-tl-lg'
+                    }`}
             >
                 <div className="flex items-center justify-between mb-4">
                     <p className={`text-[11px] font-semibold uppercase tracking-wide ${detailColor}`}>
@@ -952,15 +957,13 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                         {conversations.map(c => (
                             <li
                                 key={c.id}
-                                className={`group flex items-center justify-between gap-2 rounded-lg px-3 py-2 transition-colors ${
-                                    activeConversationId === c.id
-                                        ? 'bg-primary/10 border border-primary/40'
-                                        : 'hover:bg-surface-light border border-transparent'
-                                } ${
-                                    isThinking || isLoading || isConversationLoading
+                                className={`group flex items-center justify-between gap-2 rounded-lg px-3 py-2 transition-colors ${activeConversationId === c.id
+                                    ? 'bg-primary/10 border border-primary/40'
+                                    : 'hover:bg-surface-light border border-transparent'
+                                    } ${isThinking || isLoading || isConversationLoading
                                         ? 'opacity-60 cursor-not-allowed hover:bg-surface'
                                         : 'cursor-pointer'
-                                }`}
+                                    }`}
                                 onClick={() => {
                                     if (isThinking || isLoading || isConversationLoading) return;
                                     handleSelectConversation(c.id);
@@ -1064,8 +1067,8 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                                     m =>
                                         m.type === 'image' &&
                                         (m.title.toLowerCase().includes('diagram') ||
-                                         m.title.toLowerCase().includes('parts') ||
-                                         m.title.toLowerCase().includes('explanation')),
+                                            m.title.toLowerCase().includes('parts') ||
+                                            m.title.toLowerCase().includes('explanation')),
                                 );
 
                                 if (diagrams.length < 1) {
@@ -1099,11 +1102,10 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                 </header>
 
                 <div
-                    className={`flex-1 ${
-                        messages.length > 0 || isLoading 
-                            ? 'overflow-y-auto custom-scrollbar p-4 md:p-6 space-y-6' 
-                            : 'overflow-hidden'
-                    }`}
+                    className={`flex-1 ${messages.length > 0 || isLoading
+                        ? 'overflow-y-auto custom-scrollbar p-4 md:p-6 space-y-6'
+                        : 'overflow-hidden'
+                        }`}
                 >
                     {isConversationLoading && (
                         <div className="flex justify-center my-2 animate-fade-in-up">
@@ -1134,23 +1136,20 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                                         return (
                                             <div key={message.id}>
                                                 <div
-                                                    className={`flex mb-3 ${
-                                                        alignRight ? 'justify-end' : 'justify-start'
-                                                    }`}
+                                                    className={`flex mb-3 ${alignRight ? 'justify-end' : 'justify-start'
+                                                        }`}
                                                 >
                                                     <div
-                                                        className={`flex items-end gap-2 max-w-full sm:max-w-[75%] ${
-                                                            alignRight
-                                                                ? 'flex-row-reverse'
-                                                                : 'flex-row'
-                                                        }`}
+                                                        className={`flex items-end gap-2 max-w-full sm:max-w-[75%] ${alignRight
+                                                            ? 'flex-row-reverse'
+                                                            : 'flex-row'
+                                                            }`}
                                                     >
                                                         <div
-                                                            className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${
-                                                                alignRight
-                                                                    ? 'bg-primary shadow-md'
-                                                                    : 'bg-gradient-to-br from-surface-light to-surface border border-primary/30'
-                                                            }`}
+                                                            className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${alignRight
+                                                                ? 'bg-primary shadow-md'
+                                                                : 'bg-gradient-to-br from-surface-light to-surface border border-primary/30'
+                                                                }`}
                                                         >
                                                             {alignRight ? (
                                                                 <UserCircleIcon className="w-6 h-6 text-background" />
@@ -1159,19 +1158,17 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                                                             )}
                                                         </div>
                                                         <div
-                                                            className={`rounded-2xl px-5 py-4 shadow-lg transition-all duration-300 hover:shadow-xl ${
-                                                                alignRight
-                                                                    ? 'bg-primary text-background border border-primary/60'
-                                                                    : 'bg-surface/90 backdrop-blur-sm border border-border/50 hover:border-primary/30'
-                                                            }`}
+                                                            className={`rounded-2xl px-5 py-4 shadow-lg transition-all duration-300 hover:shadow-xl ${alignRight
+                                                                ? 'bg-primary text-background border border-primary/60'
+                                                                : 'bg-surface/90 backdrop-blur-sm border border-border/50 hover:border-primary/30'
+                                                                }`}
                                                         >
                                                             {renderMessageContent(message)}
                                                             <p
-                                                                className={`text-[11px] mt-1 ${
-                                                                    alignRight
-                                                                        ? 'text-background/70'
-                                                                        : 'text-text-secondary/70'
-                                                                }`}
+                                                                className={`text-[11px] mt-1 ${alignRight
+                                                                    ? 'text-background/70'
+                                                                    : 'text-text-secondary/70'
+                                                                    }`}
                                                             >
                                                                 {message.timestamp}
                                                             </p>
@@ -1189,14 +1186,12 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                                                 </div>
                                                 {attachments.length > 0 && (
                                                     <div
-                                                        className={`flex mt-2 mb-4 ${
-                                                            alignRight ? 'justify-end' : 'justify-start'
-                                                        }`}
+                                                        className={`flex mt-2 mb-4 ${alignRight ? 'justify-end' : 'justify-start'
+                                                            }`}
                                                     >
                                                         <div
-                                                            className={`flex items-start gap-2 max-w-full sm:max-w-[75%] ${
-                                                                alignRight ? 'flex-row-reverse' : ''
-                                                            }`}
+                                                            className={`flex items-start gap-2 max-w-full sm:max-w-[75%] ${alignRight ? 'flex-row-reverse' : ''
+                                                                }`}
                                                         >
                                                             <div className="w-8 h-8 flex-shrink-0" />
                                                             <MediaAttachmentBubble
@@ -1239,9 +1234,8 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                     >
                         <div className="flex-1 transition-all duration-300">
                             <div
-                                className={`flex items-center bg-background px-4 py-2 transition-all duration-300 ease-in-out overflow-hidden border-2 ${
-                                    isInputFocused ? 'border-primary' : 'border-transparent'
-                                }`}
+                                className={`flex items-center bg-background px-4 py-2 transition-all duration-300 ease-in-out overflow-hidden border-2 ${isInputFocused ? 'border-primary' : 'border-transparent'
+                                    }`}
                                 style={{
                                     borderRadius: isMultiLineInput ? 24 : 9999,
                                     transition: 'border-radius 300ms cubic-bezier(0.4, 0, 0.2, 1), border-color 200ms',
@@ -1406,7 +1400,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                         </p>
                         <div className="space-y-2 mb-4">
                             {reportCategories.map((category) => {
-                                const label = category.split('_').map(word => 
+                                const label = category.split('_').map(word =>
                                     word.charAt(0).toUpperCase() + word.slice(1)
                                 ).join(' ');
                                 return (

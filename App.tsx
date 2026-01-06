@@ -9,7 +9,7 @@ import ManageFaqsPage from './pages/ManageFaqsPage';
 import MediaLibraryPage from './pages/MediaLibraryPage';
 import UserConversationsPage from './pages/UserConversationsPage';
 import AdminLoginPage from './pages/AdminLoginPage';
-import ReportsPage from './pages/debug/ReportsPage';
+import ReportsPage from './pages/ReportsPage';
 import { BackIcon, FaqIcon, MediaIcon, ChatIcon, MenuIcon, DashboardIcon, SpinnerIcon, ReportsIcon } from './components/icons';
 import { api } from './lib/apiClient';
 import { isAdmin, setAdminStatus } from './lib/auth';
@@ -127,12 +127,12 @@ const AppContent: React.FC = () => {
         };
     }, []);
 
-    
+
     const incrementFaqCount = useCallback(async (faqId: number) => {
         try {
             await api.incrementFaqCount(faqId);
             // Update local state instead of refetching
-            setFaqs(prevFaqs => prevFaqs.map(faq => 
+            setFaqs(prevFaqs => prevFaqs.map(faq =>
                 faq.id === faqId ? { ...faq, asked_count: faq.asked_count + 1 } : faq
             ));
         } catch (error: any) {
@@ -147,17 +147,13 @@ const AppContent: React.FC = () => {
         if (location.pathname.includes('/faqs')) return 'Manage FAQs';
         if (location.pathname.includes('/media')) return 'Media Library';
         if (location.pathname.includes('/conversations')) return 'User Conversations';
-        if (location.pathname.includes('/debug/reports')) return 'Reports';
+        if (location.pathname.includes('/reports')) return 'Reports';
         if (location.pathname.includes('/dashboard')) return 'Dashboard';
         return 'Assistant';
     };
-    
+
     const handleBack = () => {
-        if (isDebugPage) {
-            navigate('/dashboard');
-        } else {
-            navigate('/chat');
-        }
+        navigate('/chat');
     };
 
     const handleMobileNav = (path: string) => {
@@ -169,7 +165,7 @@ const AppContent: React.FC = () => {
         <div className="flex flex-col" style={{ height: '100dvh', minHeight: '100dvh', maxHeight: '100dvh' }}>
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             {isDashboard && isAuthenticated && (
-                 <header className="bg-surface p-4 flex justify-between items-center border-b border-border shadow-md z-10">
+                <header className="bg-surface p-4 flex justify-between items-center border-b border-border shadow-md z-10">
                     <div className="flex items-center gap-4">
                         <button onClick={handleBack} className="p-2 rounded-full hover:bg-surface-light transition-colors">
                             <BackIcon />
@@ -177,82 +173,46 @@ const AppContent: React.FC = () => {
                         <h1 className="text-xl font-bold text-text-primary">{getPageTitle()}</h1>
                     </div>
                     <div className="hidden md:flex items-center gap-2">
-                        {isDebugPage ? (
-                            <>
-                                {!location.pathname.endsWith('/dashboard') && (
-                                    <button
-                                        onClick={() => navigate('/dashboard')}
-                                        className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm h-9 lg:min-w-[120px]"
-                                    >
-                                        <DashboardIcon className="w-4 h-4 flex-shrink-0" /> <span>Dashboard</span>
-                                    </button>
-                                )}
-                                <button onClick={() => navigate('/dashboard/debug/reports')} className={`px-4 py-2 rounded-full font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9 ${
-                                  location.pathname.includes('/debug/reports')
-                                    ? 'bg-primary text-background'
-                                    : 'bg-surface-light text-text-primary hover:bg-primary hover:text-background'
-                                }`}>
-                                    <ReportsIcon className="w-4 h-4 flex-shrink-0" /> <span>Reports</span>
-                                </button>
-                            </>
-                        ) : (
-                            <>
-                                {!location.pathname.endsWith('/dashboard') && (
-                                    <button
-                                        onClick={() => navigate('/dashboard')}
-                                        className={`bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm h-9 ${
-                                            location.pathname.includes('/conversations') ? '' : 'lg:min-w-[120px]'
-                                        }`}
-                                    >
-                                        <DashboardIcon className="w-4 h-4 flex-shrink-0" /> <span>Dashboard</span>
-                                    </button>
-                                )}
-                                <button onClick={() => navigate('/dashboard/conversations')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[140px] h-9"><ChatIcon className="w-4 h-4 flex-shrink-0" /> <span>Conversations</span></button>
-                                <button onClick={() => navigate('/dashboard/faqs')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9"><FaqIcon className="w-4 h-4 flex-shrink-0" /> <span>FAQs</span></button>
-                                <button onClick={() => navigate('/dashboard/media')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9"><MediaIcon className="w-4 h-4 flex-shrink-0" /> <span>Media</span></button>
-                            </>
+                        {!location.pathname.endsWith('/dashboard') && (
+                            <button
+                                onClick={() => navigate('/dashboard')}
+                                className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm h-9 lg:min-w-[120px]"
+                            >
+                                <DashboardIcon className="w-4 h-4 flex-shrink-0" /> <span>Dashboard</span>
+                            </button>
                         )}
+                        <button onClick={() => navigate('/dashboard/conversations')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[140px] h-9"><ChatIcon className="w-4 h-4 flex-shrink-0" /> <span>Conversations</span></button>
+                        <button onClick={() => navigate('/dashboard/reports')} className={`px-4 py-2 rounded-full font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9 ${location.pathname.includes('/reports')
+                                ? 'bg-primary text-background'
+                                : 'bg-surface-light text-text-primary hover:bg-primary hover:text-background'
+                            }`}>
+                            <ReportsIcon className="w-4 h-4 flex-shrink-0" /> <span>Reports</span>
+                        </button>
+                        <button onClick={() => navigate('/dashboard/faqs')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9"><FaqIcon className="w-4 h-4 flex-shrink-0" /> <span>FAQs</span></button>
+                        <button onClick={() => navigate('/dashboard/media')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9"><MediaIcon className="w-4 h-4 flex-shrink-0" /> <span>Media</span></button>
                     </div>
                     <div className="md:hidden" ref={mobileMenuRef}>
                         <button onClick={() => setIsMobileMenuOpen(prev => !prev)} className="p-2 rounded-full hover:bg-surface-light transition-colors"><MenuIcon /></button>
                         {isMobileMenuOpen && (
                             <div className="absolute top-16 right-4 w-56 bg-surface rounded-lg shadow-xl border border-border z-50 animate-fade-in-down">
                                 <ul className="p-2">
-                                    {isDebugPage ? (
-                                        <>
-                                            {!location.pathname.endsWith('/dashboard') && (
-                                                <li>
-                                                    <button
-                                                        onClick={() => handleMobileNav('/dashboard')}
-                                                        className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"
-                                                    >
-                                                        <DashboardIcon /> Dashboard
-                                                    </button>
-                                                </li>
-                                            )}
-                                            <li><button onClick={() => handleMobileNav('/dashboard/debug/reports')} className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
-                                              location.pathname.includes('/debug/reports')
-                                                ? 'bg-primary/20 text-primary'
-                                                : 'hover:bg-surface-light'
-                                            }`}><ReportsIcon /> Reports</button></li>
-                                        </>
-                                    ) : (
-                                        <>
-                                            {!location.pathname.endsWith('/dashboard') && (
-                                                <li>
-                                                    <button
-                                                        onClick={() => handleMobileNav('/dashboard')}
-                                                        className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"
-                                                    >
-                                                        <DashboardIcon /> Dashboard
-                                                    </button>
-                                                </li>
-                                            )}
-                                            <li><button onClick={() => handleMobileNav('/dashboard/conversations')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><ChatIcon /> Conversations</button></li>
-                                            <li><button onClick={() => handleMobileNav('/dashboard/faqs')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><FaqIcon /> FAQs</button></li>
-                                            <li><button onClick={() => handleMobileNav('/dashboard/media')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><MediaIcon /> Media</button></li>
-                                        </>
+                                    {!location.pathname.endsWith('/dashboard') && (
+                                        <li>
+                                            <button
+                                                onClick={() => handleMobileNav('/dashboard')}
+                                                className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"
+                                            >
+                                                <DashboardIcon /> Dashboard
+                                            </button>
+                                        </li>
                                     )}
+                                    <li><button onClick={() => handleMobileNav('/dashboard/conversations')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><ChatIcon /> Conversations</button></li>
+                                    <li><button onClick={() => handleMobileNav('/dashboard/reports')} className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${location.pathname.includes('/reports')
+                                            ? 'bg-primary/20 text-primary'
+                                            : 'hover:bg-surface-light'
+                                        }`}><ReportsIcon /> Reports</button></li>
+                                    <li><button onClick={() => handleMobileNav('/dashboard/faqs')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><FaqIcon /> FAQs</button></li>
+                                    <li><button onClick={() => handleMobileNav('/dashboard/media')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><MediaIcon /> Media</button></li>
                                 </ul>
                             </div>
                         )}
@@ -264,7 +224,7 @@ const AppContent: React.FC = () => {
                 <Routes>
                     <Route path="/login" element={<AdminLoginPage onLoginSuccess={() => setIsAuthenticated(true)} />} />
                     <Route path="/chat" element={
-                        <ChatbotPage 
+                        <ChatbotPage
                             faqs={faqs}
                             media={media}
                             incrementFaqCount={incrementFaqCount}
@@ -275,8 +235,7 @@ const AppContent: React.FC = () => {
                     <Route path="/dashboard/faqs" element={<ProtectedRoute><ManageFaqsPage faqs={faqs} media={media} refreshData={fetchData} loading={loading} showToast={showToast} /></ProtectedRoute>} />
                     <Route path="/dashboard/media" element={<ProtectedRoute><MediaLibraryPage media={media} refreshData={fetchData} loading={loading} showToast={showToast} /></ProtectedRoute>} />
                     <Route path="/dashboard/conversations" element={<ProtectedRoute><UserConversationsPage /></ProtectedRoute>} />
-                    <Route path="/dashboard/debug/reports" element={<ProtectedRoute><ReportsPage showToast={showToast} /></ProtectedRoute>} />
-                    <Route path="/dashboard/debug" element={<Navigate to="/dashboard/debug/reports" replace />} />
+                    <Route path="/dashboard/reports" element={<ProtectedRoute><ReportsPage showToast={showToast} /></ProtectedRoute>} />
                     <Route path="/" element={<Navigate to="/chat" replace />} />
                     <Route path="*" element={<Navigate to="/chat" replace />} />
                 </Routes>

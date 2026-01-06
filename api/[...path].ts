@@ -25,12 +25,12 @@ function requireAdmin(req: Request): { authorized: boolean; error?: string } {
   if (!adminPassword) {
     return { authorized: false, error: 'Server configuration error: Admin password not set' };
   }
-  
+
   const providedPassword = getAdminPassword(req);
   if (!providedPassword || providedPassword !== adminPassword) {
     return { authorized: false, error: 'Access denied. Admin privileges required.' };
   }
-  
+
   return { authorized: true };
 }
 
@@ -84,7 +84,7 @@ Respond with ONLY the intent phrase, nothing else.`,
       temperature: 0.1,
       max_tokens: 20,
     });
-    
+
     const intent = response.choices[0]?.message?.content?.trim() || '';
     // Clean up any punctuation or extra words
     return intent
@@ -113,6 +113,12 @@ function errorResponse(message: string, status: number = 500, details?: string) 
 }
 
 export default async function handler(req: Request) {
+  // Log request for Vercel visibility
+  const url = new URL(req.url);
+  const path = url.pathname;
+  const method = req.method;
+  console.log(`[API_REQUEST] ${method} ${path}`);
+
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -135,7 +141,7 @@ export default async function handler(req: Request) {
     const url = new URL(req.url);
     let path = url.pathname;
     const method = req.method;
-    
+
     // Vercel catch-all routes: normalize path to always start with /api/
     // The path could be: /api/users/xxx, /users/xxx, or users/xxx depending on config
     if (!path.startsWith('/api')) {
@@ -151,8 +157,8 @@ export default async function handler(req: Request) {
       // Test database connection
       try {
         await db.execute('SELECT 1');
-        return jsonResponse({ 
-          status: 'ok', 
+        return jsonResponse({
+          status: 'ok',
           database: 'connected',
           env: {
             hasTursoUrl: !!process.env.TURSO_DATABASE_URL,
@@ -160,10 +166,10 @@ export default async function handler(req: Request) {
           }
         });
       } catch (dbError: any) {
-        return jsonResponse({ 
-          status: 'ok', 
+        return jsonResponse({
+          status: 'ok',
           database: 'error',
-          error: dbError.message 
+          error: dbError.message
         }, 200);
       }
     }
@@ -204,7 +210,7 @@ export default async function handler(req: Request) {
 
       // Generate embedding from intent (not question)
       const embedding = await calculateEmbedding(intent, openai);
-      
+
       const data = await dbHelpers.insert(db, 'faqs', {
         question,
         answer,
@@ -251,7 +257,7 @@ export default async function handler(req: Request) {
         intent,
         updated_at: new Date().toISOString(),
       };
-      
+
       if (media_ids !== undefined) {
         updateData.media_ids = JSON.stringify(media_ids);
       }
@@ -262,7 +268,7 @@ export default async function handler(req: Request) {
         updateData.embedding = JSON.stringify(embedding);
         updateData.embedding_updated_at = new Date().toISOString();
       }
-      
+
       const data = await dbHelpers.update(db, 'faqs', updateData, { column: 'id', value: id });
       if (!data) return errorResponse('FAQ not found', 404);
       return jsonResponse(data);
@@ -278,12 +284,12 @@ export default async function handler(req: Request) {
     const faqIncrementMatch = path.match(/^\/api\/faqs\/(\d+)\/increment$/);
     if (faqIncrementMatch && method === 'POST') {
       const id = parseInt(faqIncrementMatch[1]);
-      
+
       const current = await dbHelpers.selectOne(db, 'faqs', { column: 'id', value: id });
       if (!current) {
         return errorResponse('FAQ not found', 404);
       }
-      
+
       await dbHelpers.update(db, 'faqs', { asked_count: (current.asked_count || 0) + 1 }, { column: 'id', value: id });
       return new Response(null, { status: 204, headers: corsHeaders });
     }
@@ -385,31 +391,31 @@ export default async function handler(req: Request) {
           }
           messagesByConv[msg.conversation_id].push(msg);
         });
-        
+
         // Calculate actual time spent per conversation: sum of gaps between consecutive messages
         const MAX_GAP_SECONDS = 300; // 5 minutes - cap gaps to exclude long breaks
-        
+
         conversationTime = Math.round(
           Object.values(messagesByConv).reduce((totalSum, messages) => {
             if (messages.length < 2) return totalSum;
-            
+
             // Sort messages by timestamp
-            const sorted = [...messages].sort((a, b) => 
+            const sorted = [...messages].sort((a, b) =>
               new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
             );
-            
+
             let convTime = 0;
             for (let i = 1; i < sorted.length; i++) {
               const prevTime = new Date(sorted[i - 1].created_at).getTime();
               const currTime = new Date(sorted[i].created_at).getTime();
               const gapSeconds = Math.round((currTime - prevTime) / 1000);
-              
+
               // Only count gaps up to MAX_GAP_SECONDS (active time)
               if (gapSeconds > 0 && gapSeconds <= MAX_GAP_SECONDS) {
                 convTime += gapSeconds;
               }
             }
-            
+
             return totalSum + convTime;
           }, 0)
         );
@@ -442,7 +448,7 @@ export default async function handler(req: Request) {
 
       // Generate UUID for user id
       const userId = crypto.randomUUID();
-      const data = await dbHelpers.insert(db, 'users', { 
+      const data = await dbHelpers.insert(db, 'users', {
         id: userId,
         name,
         created_at: new Date().toISOString()
@@ -533,177 +539,15 @@ export default async function handler(req: Request) {
       return jsonResponse(data, 201);
     }
 
-    // Route: /api/admin/conversations-with-users
-    if (path === '/api/admin/conversations-with-users' && method === 'GET') {
-      const conversations = await dbHelpers.selectAll(
-        db,
-        'conversations',
-        'id, user_id, created_at, title, is_deleted_by_user',
-        { column: 'created_at', ascending: false }
-      );
-      
-      const userIds = [...new Set(conversations.map((c: any) => c.user_id))];
-      const users = userIds.length > 0 
-        ? await dbHelpers.selectWhereIn(db, 'users', { column: 'id', values: userIds }, 'id, name, created_at')
-        : [];
-      
-      const userMap: Record<string, any> = {};
-      users.forEach((u: any) => { userMap[u.id] = u; });
-      
-      const mapped = conversations.map((c: any) => ({
-        id: c.id,
-        user_id: c.user_id,
-        created_at: c.created_at,
-        title: c.title,
-        is_deleted_by_user: c.is_deleted_by_user,
-        user: userMap[c.user_id] || null,
-      }));
-
-      return jsonResponse(mapped);
-    }
-
-    // Route: /api/reset-all-user-data
-    if (path === '/api/reset-all-user-data' && method === 'POST') {
-      await dbHelpers.deleteAll(db, 'chat_messages');
-      await dbHelpers.deleteAll(db, 'conversations');
-      // Delete all users except the default one
-      await db.execute({ sql: "DELETE FROM users WHERE id != ?", args: ['00000000-0000-0000-0000-000000000000'] });
-      
-      const faqs = await dbHelpers.selectAll(db, 'faqs', 'id');
-      if (faqs && faqs.length > 0) {
-        await Promise.all(
-          faqs.map((faq: any) => 
-            dbHelpers.update(db, 'faqs', { asked_count: 0 }, { column: 'id', value: faq.id })
-          )
-        );
-      }
-      
-      return jsonResponse({ success: true });
-    }
-
-    // Route: /api/reports
-    if (path === '/api/reports' && method === 'POST') {
-      const body = await req.json();
-      const { userId, queryId, reportType, userQuery, botResponse } = body || {};
-      
-      if (!reportType || !reportType.trim()) {
-        return errorResponse('Report type is required', 400);
-      }
-
-      if (!queryId || !queryId.trim()) {
-        return errorResponse('queryId is required for all reports', 400);
-      }
-
-      // Find bot message with this queryId
-      const botMessages = await db.execute({
-        sql: "SELECT id, conversation_id, text, created_at FROM chat_messages WHERE query_id = ? AND sender = 'bot' ORDER BY created_at DESC LIMIT 1",
-        args: [queryId]
-      });
-      const botMessage = botMessages.rows[0] as any;
-      
-      let finalUserQuery = userQuery || null;
-      let finalBotResponse = botResponse || null;
-      
-      if (botMessage) {
-        finalBotResponse = botMessage.text;
-        
-        const userMessages = await db.execute({
-          sql: "SELECT text FROM chat_messages WHERE conversation_id = ? AND sender = 'user' AND created_at < ? ORDER BY created_at DESC LIMIT 1",
-          args: [botMessage.conversation_id, botMessage.created_at]
-        });
-        const userMessage = userMessages.rows[0] as any;
-        
-        if (userMessage) {
-          finalUserQuery = userMessage.text;
-        }
-      }
-      
-      const data = await dbHelpers.insert(db, 'user_reports', {
-        user_id: userId || null,
-        query_id: queryId,
-        report_type: reportType,
-        user_query: finalUserQuery,
-        bot_response: finalBotResponse,
-      });
-
-      return jsonResponse({ success: true, report: data });
-    }
-
-    if (path === '/api/reports' && method === 'GET') {
-      const adminCheck = requireAdmin(req);
-      if (!adminCheck.authorized) {
-        return errorResponse(adminCheck.error || 'Access denied', 403);
-      }
-
-      const reports = await db.execute({
-        sql: "SELECT ur.*, u.name as user_name FROM user_reports ur LEFT JOIN users u ON ur.user_id = u.id ORDER BY ur.created_at DESC LIMIT 500"
-      });
-
-      const mappedReports = (reports.rows || []).map((report: any) => ({
-        ...report,
-        user_name: report.user_name || null,
-      }));
-
-      return jsonResponse({ success: true, reports: mappedReports });
-    }
-
-    if (path === '/api/reports' && method === 'DELETE') {
-      const adminCheck = requireAdmin(req);
-      if (!adminCheck.authorized) {
-        return errorResponse(adminCheck.error || 'Access denied', 403);
-      }
-
-      await dbHelpers.deleteAll(db, 'user_reports');
-      return jsonResponse({ success: true, message: 'All reports cleared' });
-    }
-
-    // Route: /api/reports/:id
-    const reportIdMatch = path.match(/^\/api\/reports\/(\d+)$/);
-    if (reportIdMatch && method === 'DELETE') {
-      const adminCheck = requireAdmin(req);
-      if (!adminCheck.authorized) {
-        return errorResponse(adminCheck.error || 'Access denied', 403);
-      }
-
-      const id = parseInt(reportIdMatch[1]);
-      const data = await db.execute({
-        sql: "DELETE FROM user_reports WHERE id = ? RETURNING *",
-        args: [id]
-      });
-      if (!data.rows[0]) return errorResponse('Report not found', 404);
-      return jsonResponse({ success: true, message: 'Report deleted' });
-    }
-
-    // Route: /api/reports/:id/status
-    const reportStatusMatch = path.match(/^\/api\/reports\/(\d+)\/status$/);
-    if (reportStatusMatch && method === 'PUT') {
-      const adminCheck = requireAdmin(req);
-      if (!adminCheck.authorized) {
-        return errorResponse(adminCheck.error || 'Access denied', 403);
-      }
-
-      const id = parseInt(reportStatusMatch[1]);
-      const body = await req.json();
-      const { status } = body || {};
-      
-      if (!status || !['active', 'resolved'].includes(status)) {
-        return errorResponse('Valid status (active, resolved) is required', 400);
-      }
-
-      const data = await dbHelpers.update(db, 'user_reports', { status }, { column: 'id', value: id });
-      if (!data) return errorResponse('Report not found', 404);
-      return jsonResponse({ success: true, report: data });
-    }
-
-    // Route: /api/report-categories
-    if (path === '/api/report-categories' && method === 'GET') {
+    // Route: /api/reports/categories
+    if (path === '/api/reports/categories' && method === 'GET') {
       try {
         const data = await db.execute({
           sql: "SELECT name, display_order FROM report_categories ORDER BY display_order ASC, name ASC"
         });
-        return jsonResponse({ 
-          success: true, 
-          categories: (data.rows || []).map((r: any) => ({ name: r.name, order: r.display_order })) 
+        return jsonResponse({
+          success: true,
+          categories: (data.rows || []).map((r: any) => ({ name: r.name, order: r.display_order }))
         });
       } catch (error: any) {
         if (error.message?.includes('no such table')) {
@@ -713,221 +557,97 @@ export default async function handler(req: Request) {
       }
     }
 
-    // Route: /api/debug/* (admin only)
-    if (path.startsWith('/api/debug/')) {
+    if (path === '/api/reports/categories' && method === 'POST') {
       const adminCheck = requireAdmin(req);
-      if (!adminCheck.authorized) {
-        return errorResponse(adminCheck.error || 'Access denied', 403);
+      if (!adminCheck.authorized) return errorResponse(adminCheck.error || 'Access denied', 403);
+
+      const body = await req.json();
+      const { name } = body || {};
+
+      if (!name || !name.trim()) {
+        return errorResponse('Category name is required', 400);
       }
 
-      // /api/debug/report-categories
-      if (path === '/api/debug/report-categories' && method === 'GET') {
-        try {
-          const data = await db.execute({
-            sql: "SELECT name, display_order FROM report_categories ORDER BY display_order ASC, name ASC"
-          });
-          return jsonResponse({
-            success: true,
-            categories: (data.rows || []).map((r: any) => ({ name: r.name, order: r.display_order }))
-          });
-        } catch (error: any) {
-          if (error.message?.includes('no such table')) {
-            return jsonResponse({ success: true, categories: [] });
-          }
-          throw error;
-        }
+      const maxOrderResult = await db.execute({
+        sql: "SELECT display_order FROM report_categories ORDER BY display_order DESC LIMIT 1"
+      });
+      const maxOrder = maxOrderResult.rows[0] as any;
+      const newOrder = (maxOrder?.display_order ?? -1) + 1;
+
+      const data = await dbHelpers.insert(db, 'report_categories', {
+        name: name.trim().toLowerCase(),
+        display_order: newOrder
+      });
+      return jsonResponse({ success: true, category: data });
+    }
+
+    if (path === '/api/reports/categories' && method === 'DELETE') {
+      const adminCheck = requireAdmin(req);
+      if (!adminCheck.authorized) return errorResponse(adminCheck.error || 'Access denied', 403);
+
+      const body = await req.json();
+      const { name } = body || {};
+
+      if (!name) {
+        return errorResponse('Category name is required', 400);
       }
 
-      if (path === '/api/debug/report-categories' && method === 'POST') {
-        const body = await req.json();
-        const { name } = body || {};
+      await dbHelpers.deleteWhere(db, 'report_categories', { column: 'name', value: name });
+      return jsonResponse({ success: true });
+    }
 
-        if (!name || !name.trim()) {
-          return errorResponse('Category name is required', 400);
-        }
+    // Route: /api/reports/categories/reorder
+    if (path === '/api/reports/categories/reorder' && method === 'POST') {
+      const adminCheck = requireAdmin(req);
+      if (!adminCheck.authorized) return errorResponse(adminCheck.error || 'Access denied', 403);
 
-        const maxOrderResult = await db.execute({
-          sql: "SELECT display_order FROM report_categories ORDER BY display_order DESC LIMIT 1"
-        });
-        const maxOrder = maxOrderResult.rows[0] as any;
-        const newOrder = (maxOrder?.display_order ?? -1) + 1;
+      const body = await req.json();
+      const { name, sourceIndex, targetIndex } = body || {};
 
-        const data = await dbHelpers.insert(db, 'report_categories', {
-          name: name.trim().toLowerCase(),
-          display_order: newOrder
-        });
-        return jsonResponse({ success: true, category: data });
+      if (!name || sourceIndex === undefined || targetIndex === undefined) {
+        return errorResponse('name, sourceIndex, and targetIndex are required', 400);
       }
 
-      if (path === '/api/debug/report-categories' && method === 'DELETE') {
-        const body = await req.json();
-        const { name } = body || {};
+      const categoriesResult = await db.execute({
+        sql: "SELECT name, display_order FROM report_categories ORDER BY display_order ASC"
+      });
+      const categories = categoriesResult.rows as any[];
+      if (!categories || categories.length === 0) return errorResponse('No categories found', 404);
 
-        if (!name) {
-          return errorResponse('Category name is required', 400);
-        }
+      const reordered = [...categories];
+      const [removed] = reordered.splice(sourceIndex, 1);
+      reordered.splice(targetIndex, 0, removed);
 
-        await dbHelpers.deleteWhere(db, 'report_categories', { column: 'name', value: name });
-        return jsonResponse({ success: true });
+      for (let i = 0; i < reordered.length; i++) {
+        await dbHelpers.update(db, 'report_categories', { display_order: i }, { column: 'name', value: reordered[i].name });
       }
 
-      // /api/debug/report-categories/reorder
-      if (path === '/api/debug/report-categories/reorder' && method === 'POST') {
-        const body = await req.json();
-        const { name, sourceIndex, targetIndex } = body || {};
+      return jsonResponse({ success: true });
+    }
 
-        if (!name || sourceIndex === undefined || targetIndex === undefined) {
-          return errorResponse('name, sourceIndex, and targetIndex are required', 400);
-        }
+    // Route: /api/reset-all-user-data
+    if (path === '/api/reset-all-user-data' && method === 'DELETE') {
+      const adminCheck = requireAdmin(req);
+      if (!adminCheck.authorized) return errorResponse(adminCheck.error || 'Access denied', 403);
 
-        // Get all categories ordered
-        const categoriesResult = await db.execute({
-          sql: "SELECT name, display_order FROM report_categories ORDER BY display_order ASC"
-        });
-        const categories = categoriesResult.rows as any[];
-        if (!categories || categories.length === 0) return errorResponse('No categories found', 404);
+      try {
+        // Order matters for foreign keys
+        await db.execute("DELETE FROM user_reports");
+        await db.execute("DELETE FROM chat_messages");
+        await db.execute("DELETE FROM conversations");
+        await db.execute("DELETE FROM users");
+        // Reset FAQ asked counts
+        await db.execute("UPDATE faqs SET asked_count = 0");
 
-        // Reorder in memory
-        const reordered = [...categories];
-        const [removed] = reordered.splice(sourceIndex, 1);
-        reordered.splice(targetIndex, 0, removed);
-
-        // Update all display_order values
-        for (let i = 0; i < reordered.length; i++) {
-          await dbHelpers.update(db, 'report_categories', { display_order: i }, { column: 'name', value: reordered[i].name });
-        }
-
-        return jsonResponse({ success: true });
+        return jsonResponse({ success: true, message: 'All user data has been reset' });
+      } catch (error: any) {
+        console.error('Reset user data failed:', error);
+        return errorResponse('Failed to reset user data', 500, error.message);
       }
-
-      // /api/debug/delete-row
-      if (path === '/api/debug/delete-row' && method === 'DELETE') {
-        const body = await req.json();
-        const { table, idColumn, id } = body || {};
-
-        if (!table || !idColumn || id === undefined || id === null) {
-          return errorResponse('table, idColumn, and id are required', 400);
-        }
-
-        const tableMap: Record<string, string> = {
-          faqs: 'faqs',
-          media: 'media',
-          users: 'users',
-          conversations: 'conversations',
-          messages: 'chat_messages',
-          reports: 'user_reports',
-        };
-
-        const dbTableName = tableMap[table];
-        if (!dbTableName) {
-          return errorResponse('Invalid table name', 400);
-        }
-
-        const data = await db.execute({
-          sql: `DELETE FROM ${dbTableName} WHERE ${idColumn} = ? RETURNING ${idColumn}`,
-          args: [id]
-        });
-        if (!data.rows[0]) return errorResponse('Row not found', 404);
-        return jsonResponse({ success: true, deletedId: (data.rows[0] as any)[idColumn] });
-      }
-
-      // /api/debug/copy-row
-      if (path === '/api/debug/copy-row' && method === 'POST') {
-        const body = await req.json();
-        const { table, idColumn, id } = body || {};
-
-        if (!table || !idColumn || id === undefined || id === null) {
-          return errorResponse('table, idColumn, and id are required', 400);
-        }
-
-        const tableMap: Record<string, string> = {
-          faqs: 'faqs',
-          media: 'media',
-          users: 'users',
-          conversations: 'conversations',
-          messages: 'chat_messages',
-          reports: 'user_reports',
-        };
-
-        const dbTableName = tableMap[table];
-        if (!dbTableName) {
-          return errorResponse('Invalid table name', 400);
-        }
-
-        const rowData = await dbHelpers.selectOne(db, dbTableName, { column: idColumn, value: id });
-        if (!rowData) return errorResponse('Row not found', 404);
-
-        const row = rowData as any;
-        const insertData: any = {};
-        Object.keys(row).forEach(col => {
-          if (col !== idColumn && col !== 'created_at') {
-            insertData[col] = row[col];
-          }
-        });
-
-        if (table === 'faqs' && row.question && openai) {
-          const embedding = await calculateEmbedding(row.question, openai);
-          insertData.embedding = JSON.stringify(embedding);
-          insertData.embedding_updated_at = new Date().toISOString();
-        }
-
-        const newRow = await dbHelpers.insert(db, dbTableName, insertData);
-        return jsonResponse({ success: true, newRow });
-      }
-
-      // /api/debug/update-cell
-      if (path === '/api/debug/update-cell' && method === 'POST') {
-        const body = await req.json();
-        const { table, idColumn, id, column, value } = body || {};
-
-        if (!table || !idColumn || id === undefined || id === null || !column || value === undefined) {
-          return errorResponse('table, idColumn, id, column, and value are required', 400);
-        }
-
-        const tableMap: Record<string, string> = {
-          faqs: 'faqs',
-          media: 'media',
-          users: 'users',
-          conversations: 'conversations',
-          messages: 'chat_messages',
-          reports: 'user_reports',
-        };
-
-        const dbTableName = tableMap[table];
-        if (!dbTableName) {
-          return errorResponse('Invalid table name', 400);
-        }
-
-        const protectedColumns = ['created_at', 'embedding'];
-        if (protectedColumns.includes(column.toLowerCase())) {
-          return errorResponse(`Cannot edit protected column: ${column}`, 400);
-        }
-
-        const validColumnName = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(column);
-        if (!validColumnName) {
-          return errorResponse('Invalid column name', 400);
-        }
-
-        const updateData: any = { [column]: value };
-        
-        if (dbTableName === 'faqs' && (column === 'question' || column === 'answer')) {
-          updateData.updated_at = new Date().toISOString();
-        }
-
-        const data = await dbHelpers.update(db, dbTableName, updateData, { column: idColumn, value: id });
-        if (!data) return errorResponse('Row not found', 404);
-        return jsonResponse({ success: true });
-      }
-
-      // Note: Some debug endpoints (delete-column, reset-sequence, relationships, run-query) 
-      // require raw SQL which isn't easily available in Edge Functions.
     }
 
     // 404 for unmatched routes
-    // #region agent log
-    console.log('[EDGE_FUNCTION] No route matched - 404:', path, method);
-    fetch('http://127.0.0.1:7245/ingest/35e17c82-2512-4435-b85b-260a0eb4f0be',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api/[...path].ts:881',message:'No route matched - returning 404',data:{path,method},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
+    console.log(`[API] 404 - No route matched: ${method} ${path}`);
     return errorResponse('Not found', 404);
   } catch (error: any) {
     console.error('API function error:', error);

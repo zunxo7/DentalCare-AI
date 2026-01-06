@@ -15,22 +15,18 @@ function getAdminPassword(): string | null {
   return import.meta.env.VITE_ADMIN_PASSWORD || null;
 }
 
-// Check if URL is a debug or reports GET endpoint (admin-only)
+// Check if URL is a reports GET endpoint (admin-only)
 // POST /api/reports is public (users can submit reports)
 function isAdminEndpoint(url: string | Request, method?: string): boolean {
   const urlString = typeof url === 'string' ? url : url.url;
   const requestMethod = method || (typeof url === 'object' && 'method' in url ? url.method : undefined);
-  
-  // All debug endpoints require admin
-  if (urlString.includes('/api/debug/')) {
-    return true;
-  }
-  
-  // Only GET /api/reports requires admin (POST is public for users to submit reports)
+
+  // Reports admin endpoints
   if (urlString.includes('/api/reports')) {
-    return requestMethod === 'GET' || requestMethod === 'PUT' || requestMethod === 'DELETE';
+    // POST /api/reports is public, everything else is admin
+    return requestMethod !== 'POST';
   }
-  
+
   return false;
 }
 
@@ -88,9 +84,7 @@ type RawMessageRow = {
   created_at: string;
 };
 
-type AdminConversationRow = Conversation & {
-  user: { id: string; name: string | null; created_at: string };
-};
+// No AdminConversationRow needed anymore
 
 function mapRawMessage(row: RawMessageRow): ChatMessage {
   // Parse media_urls if it's a JSON string
@@ -107,7 +101,7 @@ function mapRawMessage(row: RawMessageRow): ChatMessage {
       mediaUrls = row.media_urls;
     }
   }
-  
+
   return {
     id: row.id,
     conversation_id: row.conversation_id,
@@ -122,12 +116,12 @@ function mapRawMessage(row: RawMessageRow): ChatMessage {
 
 export const api = {
   // FAQs
-getFaqs: async () => {
-  const data = await request<FAQ[]>(`${API_BASE}/faqs`);
-  return data;
-},
+  getFaqs: async () => {
+    const data = await request<FAQ[]>(`${API_BASE}/faqs`);
+    return data;
+  },
 
-createFaq: (data: { question: string; answer: string; intent: string; media_ids?: number[] }) =>
+  createFaq: (data: { question: string; answer: string; intent: string; media_ids?: number[] }) =>
     request<FAQ>(`${API_BASE}/faqs`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -148,8 +142,7 @@ createFaq: (data: { question: string; answer: string; intent: string; media_ids?
   deleteFaq: (id: number) =>
     request<void>(`${API_BASE}/faqs/${id}`, { method: 'DELETE' }),
 
-  deleteAllFaqs: () =>
-    request<void>(`${API_BASE}/faqs`, { method: 'DELETE' }),
+
 
   incrementFaqCount: (id: number) =>
     request<void>(`${API_BASE}/faqs/${id}/increment`, { method: 'POST' }),
@@ -183,11 +176,15 @@ createFaq: (data: { question: string; answer: string; intent: string; media_ids?
   deleteMedia: (id: number) =>
     request<void>(`${API_BASE}/media/${id}`, { method: 'DELETE' }),
 
-  deleteAllMedia: () =>
-    request<void>(`${API_BASE}/media`, { method: 'DELETE' }),
+
 
   // Stats
   getStats: () => request<DashboardStats>(`${API_BASE}/stats`),
+
+  resetAllUserData: () =>
+    request<{ success: boolean; message: string }>(`${API_BASE}/reset-all-user-data`, {
+      method: 'DELETE',
+    }),
 
   // Users
   getUser: (id: string) => request<User>(`${API_BASE}/users/${id}`),
@@ -236,30 +233,19 @@ createFaq: (data: { question: string; answer: string; intent: string; media_ids?
   },
 
 
-getAllMedia: async () => {
+  getAllMedia: async () => {
     try {
-        const res = await fetch(`${API_BASE}/media`);
-        if (!res.ok) throw new Error("Failed to fetch media");
-        return await res.json();
+      const res = await fetch(`${API_BASE}/media`);
+      if (!res.ok) throw new Error("Failed to fetch media");
+      return await res.json();
     } catch (e) {
-        console.error("getAllMedia error:", e);
-        return [];
+      console.error("getAllMedia error:", e);
+      return [];
     }
-},
+  },
 
 
-  // Admin
-  getAdminConversationsWithUsers: () =>
-    request<AdminConversationRow[]>(
-      `${API_BASE}/admin/conversations-with-users`
-    ),
 
-  getMessagesForConversation: (conversationId: number) =>
-    api.getConversationMessages(conversationId),
-
-  // Dangerous actions
-  resetAllUserData: () =>
-    request<void>(`${API_BASE}/reset-all-user-data`, { method: 'POST' }),
 
   // Reports
   createReport: (data: {
@@ -276,7 +262,7 @@ getAllMedia: async () => {
 
   getReports: () =>
     request<{ success: boolean; reports: any[] }>(`${API_BASE}/reports`),
-  
+
   updateReportStatus: (reportId: number, status: 'active' | 'resolved') =>
     request<{ success: boolean; report: any }>(`${API_BASE}/reports/${reportId}/status`, {
       method: 'PUT',
@@ -284,13 +270,37 @@ getAllMedia: async () => {
     }),
 
   deleteReport: (reportId: number) =>
-    request<{ success: boolean; message: string }>(`${API_BASE}/reports/${reportId}`, {
+    request<{ success: boolean; message: string }>(`${API_BASE}/reports`, {
+      method: 'DELETE',
+      body: JSON.stringify({ id: reportId }),
+    }),
+
+  deleteReports: () =>
+    request<{ success: boolean; message: string }>(`${API_BASE}/reports`, {
       method: 'DELETE',
     }),
 
   // Report categories
   getReportCategories: () =>
-    request<{ success: boolean; categories: Array<{ name: string; order: number }> }>(`${API_BASE}/report-categories`),
+    request<{ success: boolean; categories: Array<{ name: string; order: number }> }>(`${API_BASE}/reports/categories`),
+
+  addReportCategory: (name: string) =>
+    request<{ success: boolean; category: any }>(`${API_BASE}/reports/categories`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+
+  deleteReportCategory: (name: string) =>
+    request<{ success: boolean }>(`${API_BASE}/reports/categories`, {
+      method: 'DELETE',
+      body: JSON.stringify({ name }),
+    }),
+
+  reorderReportCategories: (name: string, sourceIndex: number, targetIndex: number) =>
+    request<{ success: boolean }>(`${API_BASE}/reports/categories/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ name, sourceIndex, targetIndex }),
+    }),
 
   // Chat/Bot endpoint (Vercel Edge Function)
   getBotResponse: async (data: {
@@ -326,6 +336,7 @@ getAllMedia: async () => {
       mediaUrls: string[];
       faqId: number | null;
       queryId: string | null;
+      pipelineLogs?: string[];
     };
   },
 };

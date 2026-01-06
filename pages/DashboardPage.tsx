@@ -4,11 +4,11 @@ import { api } from '../lib/apiClient';
 import { TotalMessagesIcon, UniqueUsersIcon, TotalFaqsIcon, TimeIcon, SpinnerIcon, TrashIcon, RefreshIcon } from '../components/icons';
 
 interface DashboardPageProps {
-  faqs: FAQ[];
-  stats: DashboardStats | null;
-  loading: boolean;
-  refreshData: (silent?: boolean) => void;
-  showToast: (message: string, type: 'success' | 'error') => void;
+    faqs: FAQ[];
+    stats: DashboardStats | null;
+    loading: boolean;
+    refreshData: (silent?: boolean) => void;
+    showToast: (message: string, type: 'success' | 'error') => void;
 }
 
 interface StatCardProps {
@@ -89,31 +89,31 @@ const renderFormattedText = (text: string) => {
 };
 
 const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message }: {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  title: string;
-  message: string;
+    isOpen: boolean;
+    onClose: () => void;
+    onConfirm: () => void;
+    title: string;
+    message: string;
 }) => {
-  if (!isOpen) return null;
+    if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-4 animate-fade-in-down" style={{ animationDuration: '0.2s' }}>
-      <div className="bg-surface rounded-lg shadow-xl p-6 w-full max-w-md border border-border">
-        <h2 className="text-xl font-bold mb-4 text-text-primary">{title}</h2>
-        <p className="text-text-secondary mb-6">{message}</p>
-        <div className="flex justify-end gap-4">
-          <button onClick={onClose} className="px-4 py-2 rounded-md bg-surface-light hover:opacity-80 transition-opacity font-semibold">
-            Cancel
-          </button>
-          <button onClick={onConfirm} className="px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-white transition-colors font-semibold flex items-center gap-2">
-            <TrashIcon />
-            Confirm
-          </button>
+    return (
+        <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-4 animate-fade-in-down" style={{ animationDuration: '0.2s' }}>
+            <div className="bg-surface rounded-lg shadow-xl p-6 w-full max-w-md border border-border">
+                <h2 className="text-xl font-bold mb-4 text-text-primary">{title}</h2>
+                <p className="text-text-secondary mb-6">{message}</p>
+                <div className="flex justify-end gap-4">
+                    <button onClick={onClose} className="px-4 py-2 rounded-md bg-surface-light hover:opacity-80 transition-opacity font-semibold">
+                        Cancel
+                    </button>
+                    <button onClick={onConfirm} className="px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-white transition-colors font-semibold flex items-center gap-2">
+                        <TrashIcon />
+                        Confirm
+                    </button>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  );
+    );
 };
 
 const StatCard: React.FC<StatCardProps> = ({ title, value, description, icon }) => (
@@ -128,33 +128,9 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, description, icon }) 
 );
 
 const DashboardPage: React.FC<DashboardPageProps> = ({ faqs, stats, loading, refreshData, showToast }) => {
-    const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [isModalOpen, setIsModalOpen] = useState(false);
     const mostAskedQuestions = [...faqs].sort((a, b) => b.asked_count - a.asked_count).slice(0, 5);
-
-    const handleRefresh = async () => {
-        setIsRefreshing(true);
-        try {
-            await refreshData(true);
-        } finally {
-            setIsRefreshing(false);
-        }
-    };
-    
-    const formatTime = (seconds: number) => {
-        const d = Math.floor(seconds / 86400);
-        const h = Math.floor((seconds % 86400) / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = Math.round(seconds % 60);
-        
-        const parts: string[] = [];
-        if (d > 0) parts.push(`${d}d`);
-        if (h > 0) parts.push(`${h}h`);
-        if (m > 0) parts.push(`${m}m`);
-        if (s > 0 || parts.length === 0) parts.push(`${s}s`);
-        
-        return parts.join(' ');
-    };
 
     const handleResetUserData = async () => {
         setIsModalOpen(false);
@@ -162,11 +138,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ faqs, stats, loading, ref
             await api.resetAllUserData();
 
             // Clear user session data from any client browsers
-            // Clean up all legacy keys
             localStorage.removeItem('ortho_user_id');
             localStorage.removeItem('ortho_chat_user_name');
             localStorage.removeItem('isAdmin');
             localStorage.removeItem('ortho_chat_conversations');
+
             // Clear auth system data
             const { clearAuth } = await import('../lib/auth');
             clearAuth();
@@ -180,6 +156,30 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ faqs, stats, loading, ref
         }
     };
 
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        try {
+            await refreshData(true);
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
+
+    const formatTime = (seconds: number) => {
+        const d = Math.floor(seconds / 86400);
+        const h = Math.floor((seconds % 86400) / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.round(seconds % 60);
+
+        const parts: string[] = [];
+        if (d > 0) parts.push(`${d}d`);
+        if (h > 0) parts.push(`${h}h`);
+        if (m > 0) parts.push(`${m}m`);
+        if (s > 0 || parts.length === 0) parts.push(`${s}s`);
+
+        return parts.join(' ');
+    };
+
     const displayStats = stats || {
         totalMessages: 0,
         uniqueUsers: 0,
@@ -189,14 +189,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ faqs, stats, loading, ref
 
     return (
         <div className="p-4 md:p-8 bg-background text-text-primary">
-            <ConfirmModal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                onConfirm={handleResetUserData}
-                title="Reset All User Data?"
-                message="DANGER: This will delete ALL users, conversations, and messages, and reset all FAQ counters. This action is irreversible. Are you sure you want to proceed?"
-            />
-
             <div className="flex justify-end mb-4">
                 <button
                     onClick={handleRefresh}
@@ -236,24 +228,31 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ faqs, stats, loading, ref
                             </div>
                         </div>
                     ))}
-                     {mostAskedQuestions.length === 0 && (
+                    {mostAskedQuestions.length === 0 && (
                         <div className="text-center py-8 text-text-secondary">
                             <p>No questions have been asked yet.</p>
                         </div>
                     )}
                 </div>
             </div>
-
             <div className="mt-8 bg-surface p-6 rounded-xl border border-accent/30">
                 <h2 className="text-xl font-bold text-accent">Danger Zone</h2>
                 <p className="text-sm text-text-secondary mt-2 mb-6">These actions are irreversible. Please proceed with caution.</p>
-                <button 
+                <button
                     onClick={() => setIsModalOpen(true)}
                     className="bg-accent text-white px-4 py-2 rounded-md hover:bg-accent-hover transition-colors flex items-center gap-2 text-sm font-semibold"
                 >
                     <TrashIcon /> Reset All User Data
                 </button>
             </div>
+
+            <ConfirmModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onConfirm={handleResetUserData}
+                title="Reset All User Data?"
+                message="DANGER: This will delete ALL users, conversations, and messages, and reset all FAQ counters. This action is irreversible. Are you sure you want to proceed?"
+            />
         </div>
     );
 };
