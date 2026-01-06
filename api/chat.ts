@@ -193,19 +193,34 @@ async function selectBestFAQWithLLM(
       messages: [
         {
           role: 'system',
-          content: `You are selecting the best FAQ match for a user's canonical intent.
+          content: `You are selecting the best FAQ for a user's intent.
 
-The user's intent is: "${canonicalIntent}"
+USER INTENT:
+"${canonicalIntent}"
 
-Review the FAQ options below. Use your reasoning to select the option that is the most helpful and semantically accurate response to the user's specific situation.
+Your job is to match the FAQ that MOST DIRECTLY answers the intent,
+not the one that gives advice unless advice is explicitly requested.
 
-GUIDANCE:
-- If the intent describes a specific mechanical issue (e.g., "wire poking", "broken bracket"), favor FAQs that address that specific cause.
-- If the intent is about general symptoms (e.g., "pain", "soreness") without a specific cause, favor general FAQs.
-- Do not be overly strict on exact word matches; look for the underlying meaning.
-- If NONE of them match well, respond with "NONE".
+STRICT MATCHING RULES:
 
-Respond with ONLY the FAQ number (1-${topFAQs.length}) or "NONE", nothing else.`,
+1. Match INTENT FORM FIRST:
+   - Question intent → explanatory FAQs
+   - Problem intent → diagnostic or descriptive FAQs
+   - Action intent → how-to or remedy FAQs
+
+2. NEVER convert intent:
+   - Do NOT answer questions with remedies
+   - Do NOT answer problems with instructions
+   - Do NOT assume the user wants action
+
+3. If multiple FAQs mention the same topic:
+   → Choose the one whose intent FORM matches the user's intent FORM.
+
+4. Higher similarity does NOT override intent mismatch.
+
+If no FAQ clearly matches, respond "NONE".
+
+Respond with ONLY the FAQ number or "NONE".`,
         },
         {
           role: 'user',
