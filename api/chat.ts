@@ -726,6 +726,7 @@ export default async function handler(req: Request) {
             if (intentEmbedding.length > 0) {
               const topFAQs = getTopFAQs(intentEmbedding, faqs, 5);
               log('[PIPELINE] Top 5 FAQs found (Running selection)');
+              topFAQs.forEach((f, i) => log(`[PIPELINE] Candidate #${i + 1}: ID=${f.faq.id} Score=${f.similarity.toFixed(4)} Intent="${f.faq.intent}"`));
 
               selectedFAQ = await selectBestFAQWithLLM(canonicalIntent, topFAQs, openai);
 
