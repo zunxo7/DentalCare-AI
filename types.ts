@@ -2,6 +2,7 @@ export interface FAQ {
   id: number;
   question: string;
   answer: string;
+  intent: string; // Canonical intent phrase (required)
   asked_count: number;
   created_at: string;
   embedding?: number[];

@@ -16,18 +16,25 @@ interface ManageFaqsPageProps {
 const FAQModal = ({ faq, media, onClose, refreshData, showToast }: { faq: Partial<FAQ> | null, media: Media[], onClose: () => void, refreshData: () => void, showToast: (message: string, type: 'success' | 'error') => void }) => {
     const [question, setQuestion] = useState(faq?.question || '');
     const [answer, setAnswer] = useState(faq?.answer || '');
+    const [intent, setIntent] = useState(faq?.intent || '');
     const [selectedMediaIds, setSelectedMediaIds] = useState<number[]>(faq?.media_ids || []);
     const [isSaving, setIsSaving] = useState(false);
+    const [isGeneratingIntent, setIsGeneratingIntent] = useState(false);
     const isEditing = !!faq?.id;
 
-    // Ensure selectedMediaIds syncs with FAQ's media_ids when FAQ changes
+    // Ensure selectedMediaIds and intent syncs with FAQ when FAQ changes
     useEffect(() => {
         if (faq?.media_ids) {
             setSelectedMediaIds(faq.media_ids);
         } else {
             setSelectedMediaIds([]);
         }
-    }, [faq?.id, faq?.media_ids]);
+        if (faq?.intent) {
+            setIntent(faq.intent);
+        } else {
+            setIntent('');
+        }
+    }, [faq?.id, faq?.media_ids, faq?.intent]);
 
     const toggleMediaSelection = (mediaId: number) => {
         setSelectedMediaIds(prev => 
@@ -37,12 +44,38 @@ const FAQModal = ({ faq, media, onClose, refreshData, showToast }: { faq: Partia
         );
     };
 
+    const handleGenerateIntent = async () => {
+        if (!question.trim()) {
+            showToast('Please enter a question first', 'error');
+            return;
+        }
+
+        setIsGeneratingIntent(true);
+        try {
+            const result = await api.generateIntent(question);
+            setIntent(result.intent);
+            showToast('Intent generated successfully', 'success');
+        } catch (error: any) {
+            console.error('Error generating intent:', error);
+            showToast(`Failed to generate intent: ${error.message || 'Unknown error'}`, 'error');
+        } finally {
+            setIsGeneratingIntent(false);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        
+        if (!intent.trim()) {
+            showToast('Intent is required. Please generate or enter an intent.', 'error');
+            return;
+        }
+
         setIsSaving(true);
         const faqData = {
             question,
             answer,
+            intent,
             media_ids: selectedMediaIds
         };
         try {
@@ -75,6 +108,45 @@ const FAQModal = ({ faq, media, onClose, refreshData, showToast }: { faq: Partia
                             className="w-full bg-surface-light border border-border rounded-md py-2 px-4 focus:outline-none focus:ring-2 focus:ring-primary"
                             required
                         />
+                    </div>
+                    <div className="mb-4">
+                        <label htmlFor="intent" className="block text-sm font-medium text-text-secondary mb-2">
+                            Canonical Intent <span className="text-accent">*</span>
+                            <span className="text-xs text-text-secondary/70 ml-2">(3-6 words, no punctuation)</span>
+                        </label>
+                        <div className="flex gap-2">
+                            <input
+                                id="intent"
+                                type="text"
+                                value={intent}
+                                onChange={e => setIntent(e.target.value)}
+                                placeholder="e.g., braces wire poking cheek"
+                                className="flex-1 bg-surface-light border border-border rounded-md py-2 px-4 focus:outline-none focus:ring-2 focus:ring-primary"
+                                required
+                            />
+                            <button
+                                type="button"
+                                onClick={handleGenerateIntent}
+                                disabled={isGeneratingIntent || !question.trim()}
+                                className="px-4 py-2 bg-primary/20 text-primary rounded-md hover:bg-primary/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
+                                title="Generate intent from question using AI"
+                            >
+                                {isGeneratingIntent ? (
+                                    <>
+                                        <SpinnerIcon />
+                                        <span className="hidden sm:inline">Generating...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="text-sm">✨</span>
+                                        <span className="hidden sm:inline">Generate</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                        <p className="text-xs text-text-secondary/70 mt-1">
+                            The intent is used for semantic matching. Generate it automatically or enter manually.
+                        </p>
                     </div>
                     <div className="mb-6">
                         <label htmlFor="answer" className="block text-sm font-medium text-text-secondary mb-2">Answer</label>
@@ -267,10 +339,13 @@ const ManageFaqsPage: React.FC<ManageFaqsPageProps> = ({ faqs, media, refreshDat
 
       for (const row of parsedFaqs) {
         try {
+          // Generate intent for each FAQ
+          const intentResult = await api.generateIntent(row.question);
           await api.createFaq({
-  question: row.question,
-  answer: row.answer
-});
+            question: row.question,
+            answer: row.answer,
+            intent: intentResult.intent,
+          });
 
           successCount += 1;
         } catch (err) {

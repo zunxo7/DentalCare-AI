@@ -127,16 +127,22 @@ getFaqs: async () => {
   return data;
 },
 
-createFaq: (data: { question: string; answer: string; media_ids?: number[] }) =>
+createFaq: (data: { question: string; answer: string; intent: string; media_ids?: number[] }) =>
     request<FAQ>(`${API_BASE}/faqs`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
-  updateFaq: (id: number, data: { question: string; answer: string; media_ids?: number[] }) =>
+  updateFaq: (id: number, data: { question: string; answer: string; intent: string; media_ids?: number[] }) =>
     request<FAQ>(`${API_BASE}/faqs/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    }),
+
+  generateIntent: (question: string) =>
+    request<{ intent: string }>(`${API_BASE}/faqs/generate-intent`, {
+      method: 'POST',
+      body: JSON.stringify({ question }),
     }),
 
   deleteFaq: (id: number) =>

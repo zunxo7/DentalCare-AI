@@ -48,6 +48,57 @@ async function calculateEmbedding(text: string, openai: OpenAI): Promise<number[
   }
 }
 
+// Helper: Generate canonical intent from question
+async function generateCanonicalIntent(question: string, openai: OpenAI): Promise<string> {
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `Rewrite the user's orthodontic question into a short canonical intent phrase.
+
+Rules:
+- English only
+- 3-6 words maximum
+- No punctuation
+- No filler words (like "how", "what", "please")
+- One clear meaning
+- Use standard orthodontic terminology
+
+Examples:
+- "my wire stabbing me" → "braces wire poking cheek"
+- "taar gaal mein chubh rahi" → "braces wire poking cheek"
+- "metal cutting mouth" → "braces wire irritating mouth"
+- "how clean braces" → "brushing braces properly"
+- "when see orthodontist" → "orthodontist appointment frequency"
+- "bracket came off" → "bracket detached loose"
+
+Respond with ONLY the intent phrase, nothing else.`,
+        },
+        {
+          role: 'user',
+          content: question,
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 20,
+    });
+    
+    const intent = response.choices[0]?.message?.content?.trim() || '';
+    // Clean up any punctuation or extra words
+    return intent
+      .toLowerCase()
+      .replace(/[^\w\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 50); // Safety limit
+  } catch (error) {
+    console.error('Intent generation failed:', error);
+    throw new Error('Failed to generate intent');
+  }
+}
+
 // Helper: JSON response
 function jsonResponse(data: any, status: number = 200) {
   return new Response(JSON.stringify(data), {
@@ -123,7 +174,7 @@ export default async function handler(req: Request) {
         const data = await dbHelpers.selectAll(
           db,
           'faqs',
-          'id, question, answer, asked_count, embedding, embedding_updated_at, updated_at, created_at, media_ids',
+          'id, question, answer, intent, asked_count, embedding, embedding_updated_at, updated_at, created_at, media_ids',
           { column: 'created_at', ascending: false }
         );
         return jsonResponse(data || []);
@@ -137,21 +188,27 @@ export default async function handler(req: Request) {
 
     if (path === '/api/faqs' && method === 'POST') {
       const body = await req.json();
-      const { question, answer, media_ids } = body || {};
+      const { question, answer, intent, media_ids } = body || {};
 
       if (!question || !answer) {
         return errorResponse('question and answer are required', 400);
+      }
+
+      if (!intent) {
+        return errorResponse('intent is required', 400);
       }
 
       if (!openai) {
         return errorResponse('OpenAI API key not configured', 500);
       }
 
-      const embedding = await calculateEmbedding(question, openai);
+      // Generate embedding from intent (not question)
+      const embedding = await calculateEmbedding(intent, openai);
       
       const data = await dbHelpers.insert(db, 'faqs', {
         question,
         answer,
+        intent,
         embedding: JSON.stringify(embedding),
         embedding_updated_at: new Date().toISOString(),
         media_ids: JSON.stringify(media_ids || []),
@@ -171,23 +228,27 @@ export default async function handler(req: Request) {
     if (faqIdMatch && method === 'PUT') {
       const id = parseInt(faqIdMatch[1]);
       const body = await req.json();
-      const { question, answer, media_ids } = body || {};
+      const { question, answer, intent, media_ids } = body || {};
 
       if (!question || !answer) {
         return errorResponse('question and answer are required', 400);
+      }
+
+      if (!intent) {
+        return errorResponse('intent is required', 400);
       }
 
       // Fetch existing FAQ
       const existingFaq = await dbHelpers.selectOne(db, 'faqs', { column: 'id', value: id });
       if (!existingFaq) return errorResponse('FAQ not found', 404);
 
-      const questionChanged = existingFaq.question !== question;
-      const answerChanged = existingFaq.answer !== answer;
-      const needsEmbeddingRecalc = questionChanged || answerChanged;
+      const intentChanged = existingFaq.intent !== intent;
+      const needsEmbeddingRecalc = intentChanged;
 
       const updateData: any = {
         question,
         answer,
+        intent,
         updated_at: new Date().toISOString(),
       };
       
@@ -196,7 +257,8 @@ export default async function handler(req: Request) {
       }
 
       if (needsEmbeddingRecalc && openai) {
-        const embedding = await calculateEmbedding(question, openai);
+        // Generate embedding from intent (not question)
+        const embedding = await calculateEmbedding(intent, openai);
         updateData.embedding = JSON.stringify(embedding);
         updateData.embedding_updated_at = new Date().toISOString();
       }
@@ -224,6 +286,27 @@ export default async function handler(req: Request) {
       
       await dbHelpers.update(db, 'faqs', { asked_count: (current.asked_count || 0) + 1 }, { column: 'id', value: id });
       return new Response(null, { status: 204, headers: corsHeaders });
+    }
+
+    // Route: /api/faqs/generate-intent
+    if (path === '/api/faqs/generate-intent' && method === 'POST') {
+      const body = await req.json();
+      const { question } = body || {};
+
+      if (!question) {
+        return errorResponse('question is required', 400);
+      }
+
+      if (!openai) {
+        return errorResponse('OpenAI API key not configured', 500);
+      }
+
+      try {
+        const intent = await generateCanonicalIntent(question, openai);
+        return jsonResponse({ intent });
+      } catch (error: any) {
+        return errorResponse(error.message || 'Failed to generate intent', 500);
+      }
     }
 
     // Route: /api/media

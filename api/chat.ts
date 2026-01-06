@@ -67,7 +67,78 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return denominator === 0 ? 0 : dotProduct / denominator;
 }
 
-function getTopFAQs(query: string, queryEmbedding: number[], faqs: any[], topN: number = 3) {
+/**
+ * Rewrites user query into a canonical intent phrase.
+ * This normalizes infinite phrasing into finite meaning.
+ * 
+ * Rules:
+ * - English only
+ * - 3-6 words
+ * - No punctuation
+ * - No filler words
+ * - One clear meaning
+ */
+async function rewriteToCanonicalIntent(englishQuery: string, openai: OpenAI): Promise<string> {
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `Rewrite the user's orthodontic question into a short canonical intent phrase.
+
+Rules:
+- English only
+- 3-6 words maximum
+- No punctuation
+- No filler words (like "how", "what", "please")
+- One clear meaning
+- Use standard orthodontic terminology
+
+Examples:
+- "my wire stabbing me" → "braces wire poking cheek"
+- "taar gaal mein chubh rahi" → "braces wire poking cheek"
+- "metal cutting mouth" → "braces wire irritating mouth"
+- "how clean braces" → "brushing braces properly"
+- "when see orthodontist" → "orthodontist appointment frequency"
+- "bracket came off" → "bracket detached loose"
+
+Respond with ONLY the intent phrase, nothing else.`,
+        },
+        {
+          role: 'user',
+          content: englishQuery,
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 20,
+    });
+    
+    const intent = response.choices[0]?.message?.content?.trim() || '';
+    // Clean up any punctuation or extra words
+    return intent
+      .toLowerCase()
+      .replace(/[^\w\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 50); // Safety limit
+  } catch (error) {
+    console.error('Intent rewriting failed:', error);
+    // Fallback: return normalized version of query
+    return normalizeText(englishQuery)
+      .split(/\s+/)
+      .filter(w => w.length > 2)
+      .slice(0, 6)
+      .join(' ');
+  }
+}
+
+/**
+ * Semantic search: Returns top N FAQs based on embedding similarity.
+ * No threshold filtering - returns top results regardless of score.
+ * This ensures recall for edge cases.
+ */
+function getTopFAQs(intentEmbedding: number[], faqs: any[], topN: number = 5) {
   const ranked = faqs.map(faq => {
     let embedding: number[] = [];
     if (faq.embedding) {
@@ -82,38 +153,88 @@ function getTopFAQs(query: string, queryEmbedding: number[], faqs: any[], topN: 
       }
     }
     
-    const embeddingScore = embedding.length > 0 && embedding.length === queryEmbedding.length
-      ? cosineSimilarity(queryEmbedding, embedding)
+    // Use pure embedding similarity (no lexical matching)
+    const similarity = embedding.length > 0 && embedding.length === intentEmbedding.length
+      ? cosineSimilarity(intentEmbedding, embedding)
       : 0;
     
-    const normalizedQuery = normalizeText(query);
-    const normalizedFaq = normalizeText(faq.question);
-    let lexicalScore = 0;
-    if (normalizedQuery === normalizedFaq) {
-      lexicalScore = 1.0;
-    } else if (normalizedFaq.includes(normalizedQuery) || normalizedQuery.includes(normalizedFaq)) {
-      lexicalScore = 0.8;
-    } else {
-      const queryWords = normalizedQuery.split(/\s+/).filter(w => w.length > 2);
-      const faqWords = normalizedFaq.split(/\s+/).filter(w => w.length > 2);
-      if (queryWords.length > 0 && faqWords.length > 0) {
-        const commonWords = queryWords.filter(w => faqWords.includes(w));
-        lexicalScore = (commonWords.length / Math.max(queryWords.length, faqWords.length)) * 0.6;
-      }
-    }
-    
-    const combinedScore = 0.7 * embeddingScore + 0.3 * lexicalScore;
-    return { faq, combinedScore };
+    return { faq, similarity };
   });
   
-  ranked.sort((a, b) => b.combinedScore - a.combinedScore);
+  ranked.sort((a, b) => b.similarity - a.similarity);
   return ranked.slice(0, topN);
 }
 
-function selectBestFAQ(ranked: any[], threshold: number = 0.6) {
-  if (ranked.length === 0) return null;
-  const top = ranked[0];
-  return top.combinedScore >= threshold ? top.faq : null;
+/**
+ * LLM selects the best FAQ from top candidates, or returns NONE.
+ * This removes false positives from embedding search.
+ */
+async function selectBestFAQWithLLM(
+  canonicalIntent: string,
+  topFAQs: Array<{ faq: any; similarity: number }>,
+  openai: OpenAI
+): Promise<any | null> {
+  if (topFAQs.length === 0) return null;
+  
+  try {
+    // Build FAQ list for LLM
+    const faqList = topFAQs
+      .map((item, index) => {
+        const faq = item.faq;
+        // Intent is required - use it directly
+        const displayText = faq.intent;
+        return `${index + 1}. ${displayText}`;
+      })
+      .join('\n');
+    
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `You are selecting the best FAQ match for a user's canonical intent.
+
+The user's intent is: "${canonicalIntent}"
+
+Review the FAQ options below and select the ONE that best matches this intent.
+If NONE of them match well, respond with "NONE".
+
+Respond with ONLY the FAQ number (1-${topFAQs.length}) or "NONE", nothing else.`,
+        },
+        {
+          role: 'user',
+          content: `FAQ options:\n${faqList}`,
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 10,
+    });
+    
+    const result = response.choices[0]?.message?.content?.trim().toUpperCase();
+    
+    // Parse response
+    if (result === 'NONE') {
+      return null;
+    }
+    
+    const match = result.match(/^(\d+)/);
+    if (match) {
+      const index = parseInt(match[1], 10) - 1;
+      if (index >= 0 && index < topFAQs.length) {
+        return topFAQs[index].faq;
+      }
+    }
+    
+    // If parsing fails, return null (safe fallback)
+    return null;
+  } catch (error) {
+    console.error('LLM FAQ selection failed:', error);
+    // Fallback: return top FAQ if similarity is reasonable
+    if (topFAQs.length > 0 && topFAQs[0].similarity > 0.5) {
+      return topFAQs[0].faq;
+    }
+    return null;
+  }
 }
 
 const SAFE_FALLBACKS = {
@@ -329,8 +450,9 @@ export default async function handler(req: Request) {
     const language = detectLanguage(normalized);
 
     // Fetch FAQs and media from database
+    // Include 'intent' field if it exists (for future use)
     const [faqs, media] = await Promise.all([
-      dbHelpers.selectAll(db, 'faqs', 'id, question, answer, embedding, media_ids'),
+      dbHelpers.selectAll(db, 'faqs', 'id, question, answer, embedding, media_ids, intent'),
       dbHelpers.selectAll(db, 'media', 'id, title, url, type'),
     ]);
 
@@ -395,23 +517,34 @@ export default async function handler(req: Request) {
       englishQuery = await translateToEnglish(normalized, language, openai);
     }
 
-    // FAQ matching
+    // NEW PIPELINE: Rewrite to canonical intent
+    const canonicalIntent = await rewriteToCanonicalIntent(englishQuery, openai);
+    console.log('[PIPELINE] Canonical intent:', canonicalIntent);
+
+    // FAQ matching using canonical intent
     let selectedFAQ: any = null;
     let faqAnswer: string | null = null;
     
     try {
-      const queryEmbeddingResponse = await openai.embeddings.create({
+      // Embed the canonical intent (not the translated query)
+      const intentEmbeddingResponse = await openai.embeddings.create({
         model: 'text-embedding-3-small',
-        input: englishQuery,
+        input: canonicalIntent,
       });
-      const queryEmbedding = queryEmbeddingResponse.data[0]?.embedding || [];
+      const intentEmbedding = intentEmbeddingResponse.data[0]?.embedding || [];
       
-      if (queryEmbedding.length > 0) {
-        const rankedFAQs = getTopFAQs(englishQuery, queryEmbedding, faqs, 3);
-        selectedFAQ = selectBestFAQ(rankedFAQs, 0.6);
+      if (intentEmbedding.length > 0) {
+        // Semantic search: Get top 5 FAQs (no threshold filtering)
+        const topFAQs = getTopFAQs(intentEmbedding, faqs, 5);
+        
+        // LLM selects best FAQ or NONE
+        selectedFAQ = await selectBestFAQWithLLM(canonicalIntent, topFAQs, openai);
         
         if (selectedFAQ) {
           faqAnswer = selectedFAQ.answer;
+          console.log('[PIPELINE] Matched FAQ:', selectedFAQ.id, selectedFAQ.intent);
+        } else {
+          console.log('[PIPELINE] No FAQ match, will generate answer');
         }
       }
     } catch (error) {
@@ -443,9 +576,11 @@ export default async function handler(req: Request) {
     // Select media
     let selectedMedia: string[] = [];
     if (selectedFAQ) {
+      // Use FAQ's linked media
       selectedMedia = selectMediaFromLinkedIds(selectedFAQ.media_ids, media);
     } else {
-      selectedMedia = selectMediaByKeywords(englishQuery, media);
+      // Fallback: use canonical intent for keyword matching (not raw query)
+      selectedMedia = selectMediaByKeywords(canonicalIntent, media);
     }
 
     // Translate back if needed
