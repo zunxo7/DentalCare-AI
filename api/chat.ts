@@ -197,8 +197,13 @@ async function selectBestFAQWithLLM(
 
 The user's intent is: "${canonicalIntent}"
 
-Review the FAQ options below and select the ONE that best matches this intent.
-If NONE of them match well, respond with "NONE".
+Review the FAQ options below. Use your reasoning to select the option that is the most helpful and semantically accurate response to the user's specific situation.
+
+GUIDANCE:
+- If the intent describes a specific mechanical issue (e.g., "wire poking", "broken bracket"), favor FAQs that address that specific cause.
+- If the intent is about general symptoms (e.g., "pain", "soreness") without a specific cause, favor general FAQs.
+- Do not be overly strict on exact word matches; look for the underlying meaning.
+- If NONE of them match well, respond with "NONE".
 
 Respond with ONLY the FAQ number (1-${topFAQs.length}) or "NONE", nothing else.`,
         },
