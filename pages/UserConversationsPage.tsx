@@ -96,7 +96,7 @@ const UserConversationsPage: React.FC = () => {
             const data = await api.getAdminConversationsWithUsers();
 
             const userMap = new Map<string, { user: User; convos: Conversation[]; totalMessages: number; totalTimeSpent: number; lastActive: string }>();
-            
+
             // Process conversations and count messages per user
             for (const convo of data || []) {
                 if (!convo.user) continue;
@@ -104,17 +104,17 @@ const UserConversationsPage: React.FC = () => {
                     userMap.set(convo.user.id, { user: convo.user, convos: [], totalMessages: 0, totalTimeSpent: 0, lastActive: convo.user.created_at });
                 }
                 userMap.get(convo.user.id)!.convos.push(convo);
-                
+
                 // Fetch messages to count and calculate time spent
                 try {
-                    const messages = await api.getMessagesForConversation(convo.id);
+                    const messages = await api.getConversationMessages(convo.id);
                     if (messages && messages.length > 0) {
                         const userEntry = userMap.get(convo.user.id)!;
-                        
+
                         // Only count user messages, not bot messages
                         const userMessages = messages.filter(msg => msg.sender === 'user');
                         userEntry.totalMessages += userMessages.length;
-                        
+
                         // Update last active to the most recent user message
                         if (userMessages.length > 0) {
                             const lastUserMsg = userMessages[userMessages.length - 1];
@@ -124,33 +124,33 @@ const UserConversationsPage: React.FC = () => {
                                 userEntry.lastActive = lastUserMsg.created_at;
                             }
                         }
-                        
+
                         // Calculate actual time spent: sum of gaps between consecutive messages
                         // Cap gaps at 5 minutes (300s) to exclude long breaks
                         if (messages.length > 1) {
                             let timeSpentSeconds = 0;
                             const MAX_GAP_SECONDS = 300; // 5 minutes
-                            
+
                             // Sort messages by timestamp
-                            const sortedMessages = [...messages].sort((a, b) => 
+                            const sortedMessages = [...messages].sort((a, b) =>
                                 new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
                             );
-                            
+
                             for (let i = 1; i < sortedMessages.length; i++) {
                                 const prevTime = new Date(sortedMessages[i - 1].created_at).getTime();
                                 const currTime = new Date(sortedMessages[i].created_at).getTime();
                                 const gapSeconds = Math.round((currTime - prevTime) / 1000);
-                                
+
                                 // Only count gaps up to MAX_GAP_SECONDS (active time)
                                 if (gapSeconds > 0 && gapSeconds <= MAX_GAP_SECONDS) {
                                     timeSpentSeconds += gapSeconds;
                                 }
                             }
-                            
+
                             userEntry.totalTimeSpent += timeSpentSeconds;
                         }
                     }
-                } catch {}
+                } catch { }
             }
 
             const usersWithStats: UserWithStats[] = Array.from(userMap.values())
@@ -192,7 +192,7 @@ const UserConversationsPage: React.FC = () => {
         setExpandedConversationId(null);
         setMessages([]);
     };
-    
+
     const handleToggleConversation = async (conversationId: number) => {
         if (expandedConversationId === conversationId) {
             setExpandedConversationId(null);
@@ -205,7 +205,7 @@ const UserConversationsPage: React.FC = () => {
         setMessages([]);
 
         try {
-            const data = await api.getMessagesForConversation(conversationId);
+            const data = await api.getConversationMessages(conversationId);
             setMessages(
                 (data || []).map(m => ({
                     ...m,
@@ -218,28 +218,28 @@ const UserConversationsPage: React.FC = () => {
             setLoading(prev => ({ ...prev, messages: false }));
         }
     };
-    
+
     const filteredUsers = useMemo(() => {
-        return users.filter(user => 
+        return users.filter(user =>
             user.name.toLowerCase().includes(searchTerm.toLowerCase())
         );
     }, [users, searchTerm]);
 
     const selectedUserConversations = selectedUser ? conversationsByUser.get(selectedUser.id) || [] : [];
 
-const getMessageAttachments = (msg: ChatMessage): { url: string; title: string; type: 'image' | 'video' }[] => {
-    if (!msg.mediaUrls) return [];
+    const getMessageAttachments = (msg: ChatMessage): { url: string; title: string; type: 'image' | 'video' }[] => {
+        if (!msg.mediaUrls) return [];
 
-    return msg.mediaUrls.map(url => {
-        const meta = allMedia.find(m => m.url === url);
+        return msg.mediaUrls.map(url => {
+            const meta = allMedia.find(m => m.url === url);
 
-        return {
-            url,
-            title: meta?.title || url,
-            type: meta?.type || (url.includes("youtube.com") || url.includes("youtu.be") ? "video" : "image"),
-        };
-    });
-};
+            return {
+                url,
+                title: meta?.title || url,
+                type: meta?.type || (url.includes("youtube.com") || url.includes("youtu.be") ? "video" : "image"),
+            };
+        });
+    };
 
     const suggestionChoice = useMemo(() => {
         const choiceMsg = messages.find(m => m.text.startsWith(SUGGESTION_CHOICE_PREFIX));
@@ -256,7 +256,7 @@ const getMessageAttachments = (msg: ChatMessage): { url: string; title: string; 
     return (
         <div className="flex h-[calc(100vh-65px)] bg-background text-text-primary">
             {/* Users List Panel */}
-            <aside 
+            <aside
                 className="w-full md:w-80 lg:w-96 border-r border-border flex-col bg-surface/30 backdrop-blur-sm"
                 style={{ display: selectedUser && window.innerWidth < 768 ? 'none' : 'flex' }}
             >
@@ -290,27 +290,26 @@ const getMessageAttachments = (msg: ChatMessage): { url: string; title: string; 
                                     const h = Math.floor((seconds % 86400) / 3600);
                                     const m = Math.floor((seconds % 3600) / 60);
                                     const s = Math.round(seconds % 60);
-                                    
+
                                     const parts: string[] = [];
                                     if (d > 0) parts.push(`${d}d`);
                                     if (h > 0) parts.push(`${h}h`);
                                     if (m > 0) parts.push(`${m}m`);
                                     if (s > 0 || parts.length === 0) parts.push(`${s}s`);
-                                    
+
                                     return parts.join(' ');
                                 };
                                 const timeDisplay = formatTime(timeSpent);
                                 const isSelected = selectedUser?.id === user.id;
-                                
+
                                 return (
-                                    <div 
-                                        key={user.id} 
+                                    <div
+                                        key={user.id}
                                         onClick={() => handleSelectUser(user)}
-                                        className={`p-3 rounded-xl cursor-pointer transition-all duration-200 border ${
-                                            isSelected 
-                                                ? 'bg-gradient-to-br from-primary/20 to-secondary/20 border-primary' 
+                                        className={`p-3 rounded-xl cursor-pointer transition-all duration-200 border ${isSelected
+                                                ? 'bg-gradient-to-br from-primary/20 to-secondary/20 border-primary'
                                                 : 'bg-surface/50 backdrop-blur-sm border-border/30 hover:border-primary/30 hover:bg-surface-light/50'
-                                        }`}
+                                            }`}
                                     >
                                         <div className="flex items-start gap-3">
                                             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/30 to-secondary/30 flex items-center justify-center flex-shrink-0">
@@ -342,24 +341,24 @@ const getMessageAttachments = (msg: ChatMessage): { url: string; title: string; 
                 {selectedUser ? (
                     <>
                         <header className="p-4 border-b border-border/50 bg-surface/80 backdrop-blur-sm flex items-center gap-3 sticky top-0 z-10 flex-shrink-0">
-                             <button className="md:hidden p-2 hover:bg-surface-light rounded-full transition-colors flex-shrink-0" onClick={() => setSelectedUser(null)}>
+                            <button className="md:hidden p-2 hover:bg-surface-light rounded-full transition-colors flex-shrink-0" onClick={() => setSelectedUser(null)}>
                                 <BackIcon />
-                             </button>
-                             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/30 to-secondary/30 flex items-center justify-center flex-shrink-0">
+                            </button>
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/30 to-secondary/30 flex items-center justify-center flex-shrink-0">
                                 <UserCircleIcon className="w-6 h-6 text-primary" />
-                             </div>
-                             <div className="min-w-0 flex-1 overflow-hidden">
+                            </div>
+                            <div className="min-w-0 flex-1 overflow-hidden">
                                 <h3 className="font-bold text-lg truncate">{selectedUser.name}</h3>
                                 <p className="text-xs text-text-secondary truncate">{selectedUser.message_count} {selectedUser.message_count === 1 ? 'message' : 'messages'}</p>
                             </div>
                         </header>
                         <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-4 md:p-6 space-y-6 bg-gradient-to-b from-background to-surface/10">
-                             {selectedUserConversations.length === 0 ? (
-                                 <div className="text-center py-10 text-text-secondary text-sm">This user has no conversations.</div>
-                             ) : (
+                            {selectedUserConversations.length === 0 ? (
+                                <div className="text-center py-10 text-text-secondary text-sm">This user has no conversations.</div>
+                            ) : (
                                 selectedUserConversations.map(convo => (
                                     <div key={convo.id} className="bg-surface/50 backdrop-blur-sm rounded-2xl border border-border/50 overflow-hidden shadow-md hover:border-primary/50 transition-all duration-300 max-w-full">
-                                        <div 
+                                        <div
                                             className="p-4 cursor-pointer flex justify-between items-center hover:bg-surface-light/30 transition-colors"
                                             onClick={() => handleToggleConversation(convo.id)}
                                         >
@@ -385,170 +384,167 @@ const getMessageAttachments = (msg: ChatMessage): { url: string; title: string; 
                                                         No messages in this conversation.
                                                     </div>
                                                 ) : (
- messages.map(msg => {
-    // FAQ suggestions
-    if (msg.text.startsWith(SUGGESTION_PREFIX)) {
-        let payload: { message?: string; suggestions?: { id: number; question: string }[] } = {};
-        try {
-            payload = JSON.parse(msg.text.slice(SUGGESTION_PREFIX.length)) || {};
-        } catch {}
+                                                    messages.map(msg => {
+                                                        // FAQ suggestions
+                                                        if (msg.text.startsWith(SUGGESTION_PREFIX)) {
+                                                            let payload: { message?: string; suggestions?: { id: number; question: string }[] } = {};
+                                                            try {
+                                                                payload = JSON.parse(msg.text.slice(SUGGESTION_PREFIX.length)) || {};
+                                                            } catch { }
 
-                        return (
-                            <div key={msg.id} className="flex items-start gap-3 max-w-full">
-                                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-surface-light to-surface border border-primary/30 flex items-center justify-center flex-shrink-0 shadow-lg">
-                                    <BotIcon className="w-6 h-6 text-primary" />
-                                </div>
+                                                            return (
+                                                                <div key={msg.id} className="flex items-start gap-3 max-w-full">
+                                                                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-surface-light to-surface border border-primary/30 flex items-center justify-center flex-shrink-0 shadow-lg">
+                                                                        <BotIcon className="w-6 h-6 text-primary" />
+                                                                    </div>
 
-                                <div className="max-w-full sm:max-w-xl p-4 rounded-2xl bg-surface/90 backdrop-blur-sm border border-border/50 hover:border-primary/30 transition-colors shadow-lg text-left min-w-0">
-                                    <p className="font-semibold text-sm break-words">{payload.message}</p>
+                                                                    <div className="max-w-full sm:max-w-xl p-4 rounded-2xl bg-surface/90 backdrop-blur-sm border border-border/50 hover:border-primary/30 transition-colors shadow-lg text-left min-w-0">
+                                                                        <p className="font-semibold text-sm break-words">{payload.message}</p>
 
-                                    <div className="mt-3 flex flex-col gap-2">
-                                        {(payload.suggestions || []).map(s => {
-                                            const isSelected = suggestionChoice === s.question;
+                                                                        <div className="mt-3 flex flex-col gap-2">
+                                                                            {(payload.suggestions || []).map(s => {
+                                                                                const isSelected = suggestionChoice === s.question;
 
-                                            return (
-                                                <button
-                                                    key={s.id}
-                                                    type="button"
-                                                    disabled
-                                                    className={`text-left px-4 py-2 rounded-xl border text-sm font-medium cursor-default transition-all break-words
-                                                        ${isSelected 
-                                                            ? "border-primary bg-primary/10" 
-                                                            : "border-border/50 bg-surface-light/50"
-                                                        } text-text-primary`}
-                                                >
-                                                    {s.question}
-                                                </button>
-                                            );
-                                        })}
-                    </div>
-                </div>
-            </div>
-        );
-    }
+                                                                                return (
+                                                                                    <button
+                                                                                        key={s.id}
+                                                                                        type="button"
+                                                                                        disabled
+                                                                                        className={`text-left px-4 py-2 rounded-xl border text-sm font-medium cursor-default transition-all break-words
+                                                        ${isSelected
+                                                                                                ? "border-primary bg-primary/10"
+                                                                                                : "border-border/50 bg-surface-light/50"
+                                                                                            } text-text-primary`}
+                                                                                    >
+                                                                                        {s.question}
+                                                                                    </button>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        }
 
-    // Hide raw selection
-    if (msg.text.startsWith(SUGGESTION_CHOICE_PREFIX)) return null;
+                                                        // Hide raw selection
+                                                        if (msg.text.startsWith(SUGGESTION_CHOICE_PREFIX)) return null;
 
-    // Normal messages
-    const attachments = getMessageAttachments(msg);
-    const alignRight = msg.sender === "user";
+                                                        // Normal messages
+                                                        const attachments = getMessageAttachments(msg);
+                                                        const alignRight = msg.sender === "user";
 
-    return (
-        <div key={msg.id} className="mb-3 max-w-full">
-            {/* Message bubble row */}
-            <div className={`flex ${alignRight ? "justify-end" : "justify-start"}`}>
-                <div
-                    className={`flex items-end gap-2 max-w-full sm:max-w-[75%] min-w-0 ${
-                        alignRight ? "flex-row-reverse" : "flex-row"
-                    }`}
-                >
-                    {/* Avatar */}
-                    <div
-                        className={`flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg
-                            ${alignRight 
-                                ? "bg-primary shadow-md" 
-                                : "bg-gradient-to-br from-surface-light to-surface border border-primary/30"
-                            }`}
-                    >
-                        {alignRight ? (
-                            <UserCircleIcon className="w-6 h-6 text-background" />
-                        ) : (
-                            <BotIcon className="w-6 h-6 text-primary" />
-                        )}
-                    </div>
+                                                        return (
+                                                            <div key={msg.id} className="mb-3 max-w-full">
+                                                                {/* Message bubble row */}
+                                                                <div className={`flex ${alignRight ? "justify-end" : "justify-start"}`}>
+                                                                    <div
+                                                                        className={`flex items-end gap-2 max-w-full sm:max-w-[75%] min-w-0 ${alignRight ? "flex-row-reverse" : "flex-row"
+                                                                            }`}
+                                                                    >
+                                                                        {/* Avatar */}
+                                                                        <div
+                                                                            className={`flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg
+                            ${alignRight
+                                                                                    ? "bg-primary shadow-md"
+                                                                                    : "bg-gradient-to-br from-surface-light to-surface border border-primary/30"
+                                                                                }`}
+                                                                        >
+                                                                            {alignRight ? (
+                                                                                <UserCircleIcon className="w-6 h-6 text-background" />
+                                                                            ) : (
+                                                                                <BotIcon className="w-6 h-6 text-primary" />
+                                                                            )}
+                                                                        </div>
 
-                    {/* Text bubble */}
-                    <div
-                        className={`rounded-2xl px-5 py-4 shadow-lg transition-all duration-300 hover:shadow-xl min-w-0 overflow-hidden break-words
-                            ${
-                                alignRight
-                                    ? "bg-primary text-background border border-primary/60"
-                                    : "bg-surface/90 backdrop-blur-sm border border-border/50 hover:border-primary/30 text-text-primary"
-                            }`}
-                    >
-                        {/* Text */}
-                        <div className={`space-y-1 text-sm sm:text-base ${alignRight ? 'font-bold tracking-wide' : ''}`}>
-                            {msg.text.split(/\r?\n/).map((line, idx) => {
-                                const trimmed = line.trim();
-                                if (!trimmed) return <div key={idx} className="h-2" />;
+                                                                        {/* Text bubble */}
+                                                                        <div
+                                                                            className={`rounded-2xl px-5 py-4 shadow-lg transition-all duration-300 hover:shadow-xl min-w-0 overflow-hidden break-words
+                            ${alignRight
+                                                                                    ? "bg-primary text-background border border-primary/60"
+                                                                                    : "bg-surface/90 backdrop-blur-sm border border-border/50 hover:border-primary/30 text-text-primary"
+                                                                                }`}
+                                                                        >
+                                                                            {/* Text */}
+                                                                            <div className={`space-y-1 text-sm sm:text-base ${alignRight ? 'font-bold tracking-wide' : ''}`}>
+                                                                                {msg.text.split(/\r?\n/).map((line, idx) => {
+                                                                                    const trimmed = line.trim();
+                                                                                    if (!trimmed) return <div key={idx} className="h-2" />;
 
-                                if (trimmed.startsWith("•")) {
-                                    return (
-                                        <ul key={idx} className="list-disc pl-5">
-                                            <li>{renderFormattedText(trimmed.replace(/^•\s*/, ""), alignRight)}</li>
-                                        </ul>
-                                    );
-                                }
+                                                                                    if (trimmed.startsWith("•")) {
+                                                                                        return (
+                                                                                            <ul key={idx} className="list-disc pl-5">
+                                                                                                <li>{renderFormattedText(trimmed.replace(/^•\s*/, ""), alignRight)}</li>
+                                                                                            </ul>
+                                                                                        );
+                                                                                    }
 
-                                return (
-                                    <p key={idx} className="whitespace-pre-wrap">
-                                        {renderFormattedText(line, alignRight)}
-                                    </p>
-                                );
-                            })}
-                        </div>
+                                                                                    return (
+                                                                                        <p key={idx} className="whitespace-pre-wrap">
+                                                                                            {renderFormattedText(line, alignRight)}
+                                                                                        </p>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
 
-                        {/* Timestamp */}
-                        <div className={`text-xs mt-2 text-right ${alignRight ? 'text-background/70' : 'text-text-secondary/70'}`}>
-                            {new Date(msg.created_at).toLocaleTimeString()}
-                        </div>
-                    </div>
-                </div>
-            </div>
+                                                                            {/* Timestamp */}
+                                                                            <div className={`text-xs mt-2 text-right ${alignRight ? 'text-background/70' : 'text-text-secondary/70'}`}>
+                                                                                {new Date(msg.created_at).toLocaleTimeString()}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
 
-            {/* Media summary row under the bubble */}
-            {attachments.length > 0 && (
-                <div className={`mt-2 flex ${alignRight ? "justify-end" : "justify-start"} max-w-full`}>
-                    <div
-                        className={`flex items-start gap-2 max-w-full sm:max-w-[75%] min-w-0 ${
-                            alignRight ? "flex-row-reverse" : ""
-                        }`}
-                    >
-                        {/* Spacer to align under the bubble */}
-                        <div className="w-10 h-10 flex-shrink-0" />
-                        <div className="rounded-xl bg-surface/70 backdrop-blur-sm border border-border/50 px-3 py-2.5 text-xs shadow-md hover:shadow-lg transition-shadow min-w-0 overflow-hidden">
-                            <div className="flex items-center justify-between mb-2 gap-2">
-                                <span className="text-[10px] font-bold uppercase text-primary tracking-wider flex items-center gap-1 flex-shrink-0">
-                                    {attachments.some(a => a.type === 'video') ? <VideoIcon className="w-3 h-3" /> : <ImageIcon className="w-3 h-3" />}
-                                    Media
-                                </span>
-                                <span className="text-[10px] text-text-secondary/70 font-semibold flex-shrink-0">
-                                    {attachments.length} {attachments.length !== 1 ? 'items' : 'item'}
-                                </span>
-                            </div>
-                            <ul className="space-y-1.5">
-                                {attachments.map(item => (
-                                    <li
-                                        key={item.url}
-                                        className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-surface-light/50 transition-colors min-w-0"
-                                    >
-                                        <a
-                                            href={item.url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex-1 truncate text-xs text-text-primary hover:text-primary transition-colors font-medium min-w-0"
-                                        >
-                                            {item.title}
-                                        </a>
-                                        <span className="text-[9px] uppercase opacity-60 font-bold px-1.5 py-0.5 bg-primary/10 rounded flex-shrink-0 whitespace-nowrap">
-                                            {item.type}
-                                        </span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-                                                }))}  {/* END messages.map */}
+                                                                {/* Media summary row under the bubble */}
+                                                                {attachments.length > 0 && (
+                                                                    <div className={`mt-2 flex ${alignRight ? "justify-end" : "justify-start"} max-w-full`}>
+                                                                        <div
+                                                                            className={`flex items-start gap-2 max-w-full sm:max-w-[75%] min-w-0 ${alignRight ? "flex-row-reverse" : ""
+                                                                                }`}
+                                                                        >
+                                                                            {/* Spacer to align under the bubble */}
+                                                                            <div className="w-10 h-10 flex-shrink-0" />
+                                                                            <div className="rounded-xl bg-surface/70 backdrop-blur-sm border border-border/50 px-3 py-2.5 text-xs shadow-md hover:shadow-lg transition-shadow min-w-0 overflow-hidden">
+                                                                                <div className="flex items-center justify-between mb-2 gap-2">
+                                                                                    <span className="text-[10px] font-bold uppercase text-primary tracking-wider flex items-center gap-1 flex-shrink-0">
+                                                                                        {attachments.some(a => a.type === 'video') ? <VideoIcon className="w-3 h-3" /> : <ImageIcon className="w-3 h-3" />}
+                                                                                        Media
+                                                                                    </span>
+                                                                                    <span className="text-[10px] text-text-secondary/70 font-semibold flex-shrink-0">
+                                                                                        {attachments.length} {attachments.length !== 1 ? 'items' : 'item'}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <ul className="space-y-1.5">
+                                                                                    {attachments.map(item => (
+                                                                                        <li
+                                                                                            key={item.url}
+                                                                                            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-surface-light/50 transition-colors min-w-0"
+                                                                                        >
+                                                                                            <a
+                                                                                                href={item.url}
+                                                                                                target="_blank"
+                                                                                                rel="noopener noreferrer"
+                                                                                                className="flex-1 truncate text-xs text-text-primary hover:text-primary transition-colors font-medium min-w-0"
+                                                                                            >
+                                                                                                {item.title}
+                                                                                            </a>
+                                                                                            <span className="text-[9px] uppercase opacity-60 font-bold px-1.5 py-0.5 bg-primary/10 rounded flex-shrink-0 whitespace-nowrap">
+                                                                                                {item.type}
+                                                                                            </span>
+                                                                                        </li>
+                                                                                    ))}
+                                                                                </ul>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    }))}  {/* END messages.map */}
                                             </div>
                                         )}
                                     </div>
                                 ))
-                             )}
+                            )}
                         </div>
                     </>
                 ) : (
@@ -567,7 +563,7 @@ const getMessageAttachments = (msg: ChatMessage): { url: string; title: string; 
                         </p>
                     </div>
                 )}
-                
+
                 {error && (
                     <div className="p-4 bg-accent text-white text-center text-sm">
                         {error}
