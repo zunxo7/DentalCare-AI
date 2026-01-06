@@ -495,6 +495,39 @@ export default async function handler(req: Request) {
       return jsonResponse(data, 201);
     }
 
+    if (path === '/api/conversations' && method === 'GET') {
+      const adminCheck = requireAdmin(req);
+      if (!adminCheck.authorized) return errorResponse(adminCheck.error || 'Access denied', 403);
+
+      try {
+        const result = await db.execute(`
+          SELECT 
+            c.id, c.user_id, c.created_at, c.title, c.is_deleted_by_user,
+            u.id as user_id_joined, u.name as user_name, u.created_at as user_created_at
+          FROM conversations c
+          LEFT JOIN users u ON c.user_id = u.id
+          ORDER BY c.created_at DESC
+        `);
+
+        const conversations = result.rows.map((row: any) => ({
+          id: row.id,
+          user_id: row.user_id,
+          created_at: row.created_at,
+          title: row.title,
+          is_deleted_by_user: row.is_deleted_by_user,
+          user: row.user_id_joined ? {
+            id: row.user_id_joined,
+            name: row.user_name,
+            created_at: row.user_created_at
+          } : null
+        }));
+
+        return jsonResponse(conversations);
+      } catch (error: any) {
+        return errorResponse(error.message || 'Failed to fetch conversations', 500);
+      }
+    }
+
     // Route: /api/conversations/:id
     const conversationIdMatch = path.match(/^\/api\/conversations\/(\d+)$/);
     if (conversationIdMatch && method === 'PATCH') {
@@ -537,6 +570,71 @@ export default async function handler(req: Request) {
         query_id: queryId || null,
       });
       return jsonResponse(data, 201);
+    }
+
+    // Route: /api/reports
+    if (path === '/api/reports' && method === 'POST') {
+      const body = await req.json();
+      const { conversationId, queryId, category, otherReason, message } = body || {};
+
+      if (!queryId || !category) {
+        return errorResponse('queryId and category are required', 400);
+      }
+
+      try {
+        const data = await dbHelpers.insert(db, 'user_reports', {
+          conversation_id: conversationId,
+          query_id: queryId,
+          category,
+          other_reason: otherReason,
+          message_snapshot: message,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        });
+        return jsonResponse(data, 201);
+      } catch (error: any) {
+        return errorResponse(error.message || 'Failed to create report', 500);
+      }
+    }
+
+    if (path === '/api/reports' && method === 'GET') {
+      const adminCheck = requireAdmin(req);
+      if (!adminCheck.authorized) return errorResponse(adminCheck.error || 'Access denied', 403);
+
+      const data = await dbHelpers.selectAll(db, 'user_reports', '*', { column: 'created_at', ascending: false });
+      return jsonResponse({ success: true, reports: data || [] });
+    }
+
+    if (path === '/api/reports' && method === 'DELETE') {
+      const adminCheck = requireAdmin(req);
+      if (!adminCheck.authorized) return errorResponse(adminCheck.error || 'Access denied', 403);
+
+      const body = await req.json().catch(() => ({}));
+      const { id } = body || {};
+
+      if (id) {
+        await dbHelpers.deleteWhere(db, 'user_reports', { column: 'id', value: id });
+        return jsonResponse({ success: true, message: 'Report deleted' });
+      } else {
+        await dbHelpers.deleteAll(db, 'user_reports');
+        return jsonResponse({ success: true, message: 'All reports cleared' });
+      }
+    }
+
+    // Route: /api/reports/:id/status
+    const reportStatusMatch = path.match(/^\/api\/reports\/(\d+)\/status$/);
+    if (reportStatusMatch && method === 'PUT') {
+      const adminCheck = requireAdmin(req);
+      if (!adminCheck.authorized) return errorResponse(adminCheck.error || 'Access denied', 403);
+
+      const id = parseInt(reportStatusMatch[1]);
+      const body = await req.json();
+      const { status } = body || {};
+
+      if (!status) return errorResponse('status is required', 400);
+
+      const data = await dbHelpers.update(db, 'user_reports', { status }, { column: 'id', value: id });
+      return jsonResponse({ success: true, report: data });
     }
 
     // Route: /api/reports/categories

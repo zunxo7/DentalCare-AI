@@ -199,6 +199,9 @@ export const api = {
   getUserConversations: (userId: string) =>
     request<Conversation[]>(`${API_BASE}/users/${userId}/conversations`),
 
+  getAdminConversationsWithUsers: () =>
+    request<Conversation[]>(`${API_BASE}/conversations`),
+
   createConversation: (userId: string, title: string) =>
     request<Conversation>(`${API_BASE}/conversations`, {
       method: 'POST',
