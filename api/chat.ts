@@ -198,20 +198,19 @@ async function selectBestFAQWithLLM(
 USER INTENT:
 "${canonicalIntent}"
 
-Your job is to match the FAQ that MOST DIRECTLY answers the intent,
-not the one that gives advice unless advice is explicitly requested.
+Your job is to match the FAQ that MOST DIRECTLY answers the intent.
 
 STRICT MATCHING RULES:
 
-1. Match INTENT FORM FIRST:
-   - Question intent → explanatory FAQs
-   - Problem intent → diagnostic or descriptive FAQs
-   - Action intent → how-to or remedy FAQs
+1. MATCH SPECIFICITY (CRITICAL):
+   - General intent (e.g., "pain", "discomfort") → MUST match a General FAQ.
+   - Do NOT infer a specific cause (like "wire", "bracket") if the user did not say it.
+   - Specific intent (e.g., "wire poking") → MUST match that specific cause.
 
-2. NEVER convert intent:
-   - Do NOT answer questions with remedies
-   - Do NOT answer problems with instructions
-   - Do NOT assume the user wants action
+2. Match INTENT FORM:
+   - Question intent → explanatory FAQs
+   - Problem intent → diagnostic/descriptive FAQs
+   - Action intent → how-to/remedy FAQs
 
 3. If multiple FAQs mention the same topic:
    → Choose the one whose intent FORM matches the user's intent FORM.
