@@ -448,6 +448,8 @@ export default async function handler(req: Request) {
 
     // Detect language
     const language = detectLanguage(normalized);
+    console.log('[PIPELINE] Language detected:', language);
+    console.log('[PIPELINE] Original query:', normalized);
 
     // Fetch FAQs and media from database
     // Include 'intent' field if it exists (for future use)
@@ -455,9 +457,11 @@ export default async function handler(req: Request) {
       dbHelpers.selectAll(db, 'faqs', 'id, question, answer, embedding, media_ids, intent'),
       dbHelpers.selectAll(db, 'media', 'id, title, url, type'),
     ]);
+    console.log('[PIPELINE] Total FAQs in database:', faqs.length);
 
     // Classify query type
     const queryType = await classifyQueryType(normalized, userName);
+    console.log('[PIPELINE] Query type:', queryType);
     
     if (queryType === 'greeting') {
       const response = EARLY_RESPONSES.greeting[language] || EARLY_RESPONSES.greeting.english;
@@ -515,6 +519,7 @@ export default async function handler(req: Request) {
     let englishQuery = normalized;
     if (language !== 'english') {
       englishQuery = await translateToEnglish(normalized, language, openai);
+      console.log('[PIPELINE] Translated to English:', englishQuery);
     }
 
     // NEW PIPELINE: Rewrite to canonical intent
@@ -537,18 +542,29 @@ export default async function handler(req: Request) {
         // Semantic search: Get top 5 FAQs (no threshold filtering)
         const topFAQs = getTopFAQs(intentEmbedding, faqs, 5);
         
+        // Log top 5 FAQs with similarity scores
+        console.log('[PIPELINE] Top 5 FAQs:');
+        topFAQs.forEach((item, idx) => {
+          console.log(`  ${idx + 1}. FAQ #${item.faq.id} | Intent: "${item.faq.intent}" | Similarity: ${(item.similarity * 100).toFixed(1)}%`);
+        });
+        
         // LLM selects best FAQ or NONE
         selectedFAQ = await selectBestFAQWithLLM(canonicalIntent, topFAQs, openai);
         
         if (selectedFAQ) {
           faqAnswer = selectedFAQ.answer;
-          console.log('[PIPELINE] Matched FAQ:', selectedFAQ.id, selectedFAQ.intent);
+          console.log('[PIPELINE] ✅ Selected FAQ:', {
+            id: selectedFAQ.id,
+            intent: selectedFAQ.intent,
+            question: selectedFAQ.question.substring(0, 50) + '...',
+            mediaCount: selectedFAQ.media_ids?.length || 0
+          });
         } else {
-          console.log('[PIPELINE] No FAQ match, will generate answer');
+          console.log('[PIPELINE] ❌ No FAQ match - generating answer with LLM');
         }
       }
     } catch (error) {
-      console.error('FAQ matching error:', error);
+      console.error('[PIPELINE] FAQ matching error:', error);
     }
 
     // Generate answer
@@ -578,15 +594,25 @@ export default async function handler(req: Request) {
     if (selectedFAQ) {
       // Use FAQ's linked media
       selectedMedia = selectMediaFromLinkedIds(selectedFAQ.media_ids, media);
+      console.log('[PIPELINE] Media selected from FAQ:', selectedMedia.length, 'items');
     } else {
       // Fallback: use canonical intent for keyword matching (not raw query)
       selectedMedia = selectMediaByKeywords(canonicalIntent, media);
+      console.log('[PIPELINE] Media selected by keywords:', selectedMedia.length, 'items');
     }
 
     // Translate back if needed
     if (language !== 'english') {
+      console.log('[PIPELINE] Translating answer back to', language);
       finalAnswer = await translateFromEnglish(finalAnswer, language, openai);
     }
+    
+    console.log('[PIPELINE] Final response:', {
+      faqId: selectedFAQ?.id || null,
+      mediaCount: selectedMedia.length,
+      answerLength: finalAnswer.length,
+      language
+    });
 
     // Return response
     const response: BotResponse = {

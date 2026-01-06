@@ -377,24 +377,40 @@ export default async function handler(req: Request) {
 
       let conversationTime = 0;
       if (timeResult && timeResult.length > 0) {
-        const timeByConv: Record<number, { min: string; max: string }> = {};
+        // Group messages by conversation_id
+        const messagesByConv: Record<number, any[]> = {};
         timeResult.forEach((msg: any) => {
-          if (!timeByConv[msg.conversation_id]) {
-            timeByConv[msg.conversation_id] = { min: msg.created_at, max: msg.created_at };
-          } else {
-            if (new Date(msg.created_at) < new Date(timeByConv[msg.conversation_id].min)) {
-              timeByConv[msg.conversation_id].min = msg.created_at;
-            }
-            if (new Date(msg.created_at) > new Date(timeByConv[msg.conversation_id].max)) {
-              timeByConv[msg.conversation_id].max = msg.created_at;
-            }
+          if (!messagesByConv[msg.conversation_id]) {
+            messagesByConv[msg.conversation_id] = [];
           }
+          messagesByConv[msg.conversation_id].push(msg);
         });
         
+        // Calculate actual time spent per conversation: sum of gaps between consecutive messages
+        const MAX_GAP_SECONDS = 300; // 5 minutes - cap gaps to exclude long breaks
+        
         conversationTime = Math.round(
-          Object.values(timeByConv).reduce((sum, conv) => {
-            const diff = (new Date(conv.max).getTime() - new Date(conv.min).getTime()) / 1000;
-            return sum + diff;
+          Object.values(messagesByConv).reduce((totalSum, messages) => {
+            if (messages.length < 2) return totalSum;
+            
+            // Sort messages by timestamp
+            const sorted = [...messages].sort((a, b) => 
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            );
+            
+            let convTime = 0;
+            for (let i = 1; i < sorted.length; i++) {
+              const prevTime = new Date(sorted[i - 1].created_at).getTime();
+              const currTime = new Date(sorted[i].created_at).getTime();
+              const gapSeconds = Math.round((currTime - prevTime) / 1000);
+              
+              // Only count gaps up to MAX_GAP_SECONDS (active time)
+              if (gapSeconds > 0 && gapSeconds <= MAX_GAP_SECONDS) {
+                convTime += gapSeconds;
+              }
+            }
+            
+            return totalSum + convTime;
           }, 0)
         );
       }

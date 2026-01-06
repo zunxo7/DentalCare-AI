@@ -125,11 +125,28 @@ const UserConversationsPage: React.FC = () => {
                             }
                         }
                         
-                        // Calculate time spent if there are multiple messages (using all messages for time calculation)
+                        // Calculate actual time spent: sum of gaps between consecutive messages
+                        // Cap gaps at 5 minutes (300s) to exclude long breaks
                         if (messages.length > 1) {
-                            const firstMsg = new Date(messages[0].created_at).getTime();
-                            const lastMsg = new Date(messages[messages.length - 1].created_at).getTime();
-                            const timeSpentSeconds = Math.round((lastMsg - firstMsg) / 1000);
+                            let timeSpentSeconds = 0;
+                            const MAX_GAP_SECONDS = 300; // 5 minutes
+                            
+                            // Sort messages by timestamp
+                            const sortedMessages = [...messages].sort((a, b) => 
+                                new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                            );
+                            
+                            for (let i = 1; i < sortedMessages.length; i++) {
+                                const prevTime = new Date(sortedMessages[i - 1].created_at).getTime();
+                                const currTime = new Date(sortedMessages[i].created_at).getTime();
+                                const gapSeconds = Math.round((currTime - prevTime) / 1000);
+                                
+                                // Only count gaps up to MAX_GAP_SECONDS (active time)
+                                if (gapSeconds > 0 && gapSeconds <= MAX_GAP_SECONDS) {
+                                    timeSpentSeconds += gapSeconds;
+                                }
+                            }
+                            
                             userEntry.totalTimeSpent += timeSpentSeconds;
                         }
                     }

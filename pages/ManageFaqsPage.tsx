@@ -95,24 +95,23 @@ const FAQModal = ({ faq, media, onClose, refreshData, showToast }: { faq: Partia
 
     return (
         <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-4" onClick={onClose}>
-            <div className="bg-surface rounded-lg shadow-xl p-8 w-full max-w-2xl border border-border" onClick={e => e.stopPropagation()}>
-                <h2 className="text-2xl font-bold mb-6">{isEditing ? 'Edit FAQ' : 'Add New FAQ'}</h2>
-                <form onSubmit={handleSubmit}>
-                    <div className="mb-4">
-                        <label htmlFor="question" className="block text-sm font-medium text-text-secondary mb-2">Question</label>
+            <div className="bg-surface rounded-lg shadow-xl p-6 w-full max-w-xl border border-border max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <h2 className="text-xl font-bold mb-4">{isEditing ? 'Edit FAQ' : 'Add FAQ'}</h2>
+                <form onSubmit={handleSubmit} className="space-y-3">
+                    <div>
+                        <label htmlFor="question" className="block text-xs font-medium text-text-secondary mb-1">Question</label>
                         <input
                             id="question"
                             type="text"
                             value={question}
                             onChange={e => setQuestion(e.target.value)}
-                            className="w-full bg-surface-light border border-border rounded-md py-2 px-4 focus:outline-none focus:ring-2 focus:ring-primary"
+                            className="w-full bg-surface-light border border-border rounded-md py-1.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                             required
                         />
                     </div>
-                    <div className="mb-4">
-                        <label htmlFor="intent" className="block text-sm font-medium text-text-secondary mb-2">
-                            Canonical Intent <span className="text-accent">*</span>
-                            <span className="text-xs text-text-secondary/70 ml-2">(3-6 words, no punctuation)</span>
+                    <div>
+                        <label htmlFor="intent" className="block text-xs font-medium text-text-secondary mb-1">
+                            Intent <span className="text-accent">*</span>
                         </label>
                         <div className="flex gap-2">
                             <input
@@ -121,83 +120,65 @@ const FAQModal = ({ faq, media, onClose, refreshData, showToast }: { faq: Partia
                                 value={intent}
                                 onChange={e => setIntent(e.target.value)}
                                 placeholder="e.g., braces wire poking cheek"
-                                className="flex-1 bg-surface-light border border-border rounded-md py-2 px-4 focus:outline-none focus:ring-2 focus:ring-primary"
+                                className="flex-1 bg-surface-light border border-border rounded-md py-1.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                                 required
                             />
                             <button
                                 type="button"
                                 onClick={handleGenerateIntent}
                                 disabled={isGeneratingIntent || !question.trim()}
-                                className="px-4 py-2 bg-primary/20 text-primary rounded-md hover:bg-primary/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
-                                title="Generate intent from question using AI"
+                                className="px-3 py-1.5 bg-primary/20 text-primary rounded-md hover:bg-primary/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                                title="Generate intent"
                             >
-                                {isGeneratingIntent ? (
-                                    <>
-                                        <SpinnerIcon />
-                                        <span className="hidden sm:inline">Generating...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <span className="text-sm">✨</span>
-                                        <span className="hidden sm:inline">Generate</span>
-                                    </>
-                                )}
+                                {isGeneratingIntent ? <SpinnerIcon /> : '✨'}
                             </button>
                         </div>
-                        <p className="text-xs text-text-secondary/70 mt-1">
-                            The intent is used for semantic matching. Generate it automatically or enter manually.
-                        </p>
                     </div>
-                    <div className="mb-6">
-                        <label htmlFor="answer" className="block text-sm font-medium text-text-secondary mb-2">Answer</label>
+                    <div>
+                        <label htmlFor="answer" className="block text-xs font-medium text-text-secondary mb-1">Answer</label>
                         <textarea
                             id="answer"
                             value={answer}
                             onChange={e => setAnswer(e.target.value)}
-                            rows={6}
-                            className="w-full bg-surface-light border border-border rounded-md py-2 px-4 focus:outline-none focus:ring-2 focus:ring-primary"
+                            rows={4}
+                            className="w-full bg-surface-light border border-border rounded-md py-1.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                             required
                         />
                     </div>
-                    <div className="mb-6">
-                        <label className="block text-sm font-medium text-text-secondary mb-2">Linked Media (Optional)</label>
-                        <p className="text-xs text-text-secondary/70 mb-3">
-                            Select media to attach when this FAQ is matched. Linked media takes priority over keyword matching.
-                            {media.length > 0 && (
-                                <span className="block mt-1 text-primary">✓ {media.length} media item{media.length !== 1 ? 's' : ''} available</span>
-                            )}
-                        </p>
+                    <div>
+                        <label className="block text-xs font-medium text-text-secondary mb-1">
+                            Media <span className="text-text-secondary/60">({selectedMediaIds.length} selected)</span>
+                        </label>
                         {media.length === 0 ? (
-                            <p className="text-sm text-text-secondary/70 italic">No media available. Add media in the Media Library first.</p>
+                            <p className="text-xs text-text-secondary/70 italic">No media available</p>
                         ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto p-2 bg-surface-light rounded-md border border-border">
-                                {media.map(m => (
-                                    <label
-                                        key={m.id}
-                                        className={`flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-surface transition-colors ${
-                                            selectedMediaIds.includes(m.id) ? 'bg-primary/20 border border-primary' : 'border border-border'
-                                        }`}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedMediaIds.includes(m.id)}
-                                            onChange={() => toggleMediaSelection(m.id)}
-                                            className="w-4 h-4 text-primary focus:ring-primary"
-                                        />
-                                        <span className="text-sm text-text-primary flex-1">
-                                            {m.title}
-                                            <span className="text-xs text-text-secondary/70 ml-2">({m.type})</span>
-                                        </span>
-                                    </label>
-                                ))}
+                            <div className="max-h-32 overflow-y-auto border border-border rounded-md p-2 bg-surface-light">
+                                <div className="grid grid-cols-1 gap-1">
+                                    {media.map(m => (
+                                        <label
+                                            key={m.id}
+                                            className={`flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-surface transition-colors text-xs ${
+                                                selectedMediaIds.includes(m.id) ? 'bg-primary/20' : ''
+                                            }`}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedMediaIds.includes(m.id)}
+                                                onChange={() => toggleMediaSelection(m.id)}
+                                                className="w-3 h-3 text-primary"
+                                            />
+                                            <span className="text-text-primary truncate">{m.title}</span>
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>
-                    <div className="flex justify-end gap-4">
-                        <button type="button" onClick={onClose} className="px-4 py-2 rounded-md bg-surface-light hover:opacity-80 transition-opacity">Cancel</button>
-                        <button type="submit" disabled={isSaving} className="px-4 py-2 rounded-md bg-primary text-background font-bold hover:bg-primary-hover transition-colors flex items-center gap-2 disabled:opacity-50">
+                    <div className="flex justify-end gap-2 pt-2">
+                        <button type="button" onClick={onClose} className="px-3 py-1.5 rounded-md bg-surface-light hover:opacity-80 transition-opacity text-sm">Cancel</button>
+                        <button type="submit" disabled={isSaving} className="px-3 py-1.5 rounded-md bg-primary text-background font-bold hover:bg-primary-hover transition-colors flex items-center gap-2 disabled:opacity-50 text-sm">
                             {isSaving && <SpinnerIcon />}
-                            {isSaving ? 'Saving...' : 'Save FAQ'}
+                            {isSaving ? 'Saving...' : 'Save'}
                         </button>
                     </div>
                 </form>
@@ -234,7 +215,7 @@ const ConfirmDeleteModal = ({ isOpen, onClose, onConfirm, title, message }: {
   );
 };
 
-const parseFaqCsv = (csvText: string): { question: string; answer: string }[] => {
+const parseFaqCsv = (csvText: string): { question: string; answer: string; intent?: string; media_ids?: number[] }[] => {
   const results = Papa.parse<string[]>(csvText, {
     header: false,
     skipEmptyLines: 'greedy',
@@ -244,24 +225,35 @@ const parseFaqCsv = (csvText: string): { question: string; answer: string }[] =>
   if (rows.length === 0) return [];
 
   const first = rows[0].map(c => (c ?? '').trim().toLowerCase());
-  const hasHeader =
-    first.length >= 2 &&
-    first[0] === 'question' &&
-    first[1] === 'answer';
+  const hasHeader = first.length >= 2 && first[0] === 'question' && first[1] === 'answer';
+  const hasIntent = first.length >= 3 && first[2] === 'intent';
+  const hasMediaIds = first.length >= 4 && first[3] === 'media_ids';
 
   const dataRows = hasHeader ? rows.slice(1) : rows;
 
-  const faqs: { question: string; answer: string }[] = [];
+  const faqs: { question: string; answer: string; intent?: string; media_ids?: number[] }[] = [];
 
   for (const row of dataRows) {
     if (!row) continue;
 
     const question = (row[0] ?? '').trim();
     const answer = (row[1] ?? '').trim();
+    const intent = hasIntent ? (row[2] ?? '').trim() : undefined;
+    const mediaIdsStr = hasMediaIds ? (row[3] ?? '').trim() : undefined;
 
     if (!question || !answer) continue;
 
-    faqs.push({ question, answer });
+    let mediaIds: number[] | undefined;
+    if (mediaIdsStr) {
+      try {
+        mediaIds = JSON.parse(mediaIdsStr);
+      } catch {
+        // Try parsing as comma-separated numbers
+        mediaIds = mediaIdsStr.split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id));
+      }
+    }
+
+    faqs.push({ question, answer, intent, media_ids: mediaIds });
   }
 
   return faqs;
@@ -339,12 +331,18 @@ const ManageFaqsPage: React.FC<ManageFaqsPageProps> = ({ faqs, media, refreshDat
 
       for (const row of parsedFaqs) {
         try {
-          // Generate intent for each FAQ
-          const intentResult = await api.generateIntent(row.question);
+          // Generate intent if not provided
+          let intent = row.intent;
+          if (!intent) {
+            const intentResult = await api.generateIntent(row.question);
+            intent = intentResult.intent;
+          }
+          
           await api.createFaq({
             question: row.question,
             answer: row.answer,
-            intent: intentResult.intent,
+            intent: intent,
+            media_ids: row.media_ids,
           });
 
           successCount += 1;
@@ -383,12 +381,14 @@ const ManageFaqsPage: React.FC<ManageFaqsPageProps> = ({ faqs, media, refreshDat
       const csvData = faqs.map(faq => ({
         question: faq.question,
         answer: faq.answer,
+        intent: faq.intent || '',
+        media_ids: faq.media_ids ? JSON.stringify(faq.media_ids) : '',
       }));
 
       // Generate CSV with header, properly escaping special characters
       const csv = Papa.unparse(csvData, {
         header: true,
-        columns: ['question', 'answer'],
+        columns: ['question', 'answer', 'intent', 'media_ids'],
         quotes: true, // Force quotes to properly escape special characters
         escapeChar: '"', // Use double quotes for escaping
         quoteChar: '"', // Use double quotes for fields
