@@ -475,6 +475,7 @@ function selectMediaByKeywords(englishQuery: string, media: any[]): string[] {
 }
 
 export default async function handler(req: Request) {
+  const PIPELINE_VERSION = 1;
   const pipelineLogs: string[] = [];
   const log = (msg: string, ...args: any[]) => {
     const formatted = args.length > 0 ? `${msg} ${JSON.stringify(args)}` : msg;
@@ -525,28 +526,104 @@ export default async function handler(req: Request) {
 
     const normalized = isValidInput(trimmed, MAX_INPUT_LENGTH) ? trimmed : truncateText(trimmed, MAX_INPUT_LENGTH);
 
-    // 1. Language Detection
+    // --- CACHE LOGIC START ---
+    let cacheEnabled = true;
+    try {
+      const setting = await dbHelpers.selectOne(db, 'app_settings', { column: 'key', value: 'cache_enabled' });
+      if (setting && setting.value === 'false') {
+        cacheEnabled = false;
+      }
+    } catch (e) {
+      log('[CACHE] Error reading settings, defaulting to ENABLED', e);
+    }
+
+    log(`[CACHE] Status: ${cacheEnabled ? 'ENABLED' : 'DISABLED'}`);
+
+    let usingCached = false;
+    let cachedIntent: string | null = null;
+    let cachedRoute: RouteCategory | null = null;
+    let cachedFaqId: number | null = null;
+
+    // Attempt to read from cache ONLY if enabled
+    if (cacheEnabled) {
+      try {
+        // Find RECENT message with SAME text and SAME version
+        // We limit to recent to avoid stale context if logic changes significantly in future versions
+        const result = await db.execute({
+          sql: `SELECT canonical_intent, route, resolved_faq_id 
+                 FROM chat_messages 
+                 WHERE sender = 'user' 
+                   AND text = ? 
+                   AND pipeline_version = ?
+                   AND route IS NOT NULL
+                 ORDER BY created_at DESC 
+                 LIMIT 1`,
+          args: [normalized, PIPELINE_VERSION]
+        });
+
+        if (result.rows.length > 0) {
+          const row = result.rows[0];
+          if (row.canonical_intent && row.route) {
+            cachedIntent = row.canonical_intent as string;
+            cachedRoute = row.route as RouteCategory;
+            cachedFaqId = row.resolved_faq_id as number | null;
+            usingCached = true;
+            log('[CACHE] HIT - Reusing decisions from previous message');
+          }
+        }
+      } catch (e) {
+        log('[CACHE] Read failed', e);
+      }
+    }
+
+    if (!usingCached && cacheEnabled) {
+      log('[CACHE] MISS - Computing fresh values');
+    }
+    // --- CACHE LOGIC END ---
+
+    // 1. Language Detection (Always run, fast and needed for response)
     const language = detectLanguage(normalized);
     log('[PIPELINE] Language detected:', language);
+    log('[PIPELINE] Original query:', normalized);
 
-    // 2. Translation to English (if needed)
+    // 2. Translation (Always run if needed)
     let englishQuery = normalized;
     if (language !== 'english') {
       englishQuery = await translateToEnglish(normalized, language, openai);
       log('[PIPELINE] Translated to English:', englishQuery);
     }
 
-    // 3. Rewrite to Canonical Intent
-    const canonicalIntent = await rewriteToCanonicalIntent(englishQuery, openai);
-    log('[PIPELINE] Canonical intent:', canonicalIntent);
+    // 3. Canonical Intent
+    // Reuse cached if available, otherwise compute
+    let canonicalIntent = '';
+    if (usingCached && cachedIntent) {
+      canonicalIntent = cachedIntent;
+      log('[PIPELINE] Using CACHED Intent:', canonicalIntent);
+    } else {
+      canonicalIntent = await rewriteToCanonicalIntent(englishQuery, openai);
+      log('[PIPELINE] Computed intent:', canonicalIntent);
+    }
+
+    // Load DB Resources
+    const [faqs, media] = await Promise.all([
+      dbHelpers.selectAll(db, 'faqs', 'id, question, answer, embedding, media_ids, intent'),
+      dbHelpers.selectAll(db, 'media', 'id, title, url, type'),
+    ]);
 
     // 4. Strict Routing
-    const route = await strictRouter(canonicalIntent, userName, openai);
-    log('[PIPELINE] Route selected:', route);
+    let route: RouteCategory;
+    if (usingCached && cachedRoute) {
+      route = cachedRoute;
+      log('[PIPELINE] Using CACHED Route:', route);
+    } else {
+      route = await strictRouter(canonicalIntent, userName, openai);
+      log('[PIPELINE] Computed Route:', route);
+    }
 
     let finalAnswer = '';
     let selectedMedia: string[] = [];
     let selectedFAQ: any = null;
+    let resolvedFaqIdForCache: number | null = null; // Store for writing to DB
 
     // 5. Branching Logic
     switch (route) {
@@ -554,11 +631,14 @@ export default async function handler(req: Request) {
       case 'META':
       case 'IRRELEVANT': {
         finalAnswer = EARLY_RESPONSES[route][language] || EARLY_RESPONSES[route].english;
+        // No FAQ for these
+        resolvedFaqIdForCache = null;
         break;
       }
 
       case 'EDUCATION': {
         // Generate educational explanation
+        resolvedFaqIdForCache = null; // Education never links to FAQ
         try {
           const llmResponse = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
@@ -573,8 +653,7 @@ export default async function handler(req: Request) {
           finalAnswer = llmResponse.choices[0]?.message?.content?.trim() || SAFE_FALLBACKS.english;
 
           // Attach Braces Diagram (IDs 5 and 6)
-          const allMedia = await dbHelpers.selectAll(db, 'media', 'id, url');
-          const partsMedia = allMedia.filter((m: any) => m.id === 5 || m.id === 6);
+          const partsMedia = media.filter((m: any) => m.id === 5 || m.id === 6);
           selectedMedia = partsMedia.map((m: any) => m.url).filter((url: any) => typeof url === 'string');
           log('[PIPELINE] Attached educational media (parts/diagrams)');
         } catch (e) {
@@ -586,6 +665,7 @@ export default async function handler(req: Request) {
 
       case 'GENERAL': {
         // Generate general dental response
+        resolvedFaqIdForCache = null;
         try {
           const llmResponse = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
@@ -605,44 +685,90 @@ export default async function handler(req: Request) {
       }
 
       case 'FAQ': {
-        // Existing FAQ Logic
-        try {
-          const [faqs, media] = await Promise.all([
-            dbHelpers.selectAll(db, 'faqs', 'id, question, answer, embedding, media_ids, intent'),
-            dbHelpers.selectAll(db, 'media', 'id, url'),
-          ]);
+        // Logic: 
+        // If cached and we have a resolved ID (or explicit NULL meaning "attempted but no match"), use it.
+        // Wait, cachedFaqId could be NULL. Does NULL mean "No FAQ" or "Not cached"?
+        // In our cache logic, we only set `usingCached=true` if we found a row. 
+        // If `usingCached` is true:
+        //    if cachedFaqId is NOT NULL -> Use that FAQ.
+        //    if cachedFaqId IS NULL -> It means previous run found NO FAQ. Skip search.
 
-          const intentEmbeddingResponse = await openai.embeddings.create({
-            model: 'text-embedding-3-small',
-            input: canonicalIntent,
-          });
-          const intentEmbedding = intentEmbeddingResponse.data[0]?.embedding || [];
+        let shouldRunFaqSearch = true;
 
-          if (intentEmbedding.length > 0) {
-            const topFAQs = getTopFAQs(intentEmbedding, faqs, 5);
-            log('[PIPELINE] Top 5 FAQs found');
-
-            selectedFAQ = await selectBestFAQWithLLM(canonicalIntent, topFAQs, openai);
-
-            if (selectedFAQ) {
-              finalAnswer = selectedFAQ.answer;
-              selectedMedia = selectMediaFromLinkedIds(selectedFAQ.media_ids, media);
-              log('[PIPELINE] ✅ FAQ matched:', selectedFAQ.id);
+        if (usingCached) {
+          if (cachedFaqId !== null) {
+            // We have a specific FAQ ID cached
+            const cachedFaq = faqs.find((f: any) => f.id === cachedFaqId);
+            if (cachedFaq) {
+              selectedFAQ = cachedFaq;
+              log('[PIPELINE] Using CACHED FAQ ID:', cachedFaqId);
+              shouldRunFaqSearch = false;
             } else {
-              log('[PIPELINE] ❌ No specific FAQ selected suitable for intent, generating general response.');
-              const llmResponse = await openai.chat.completions.create({
-                model: 'gpt-4o-mini',
-                messages: [
-                  { role: 'system', content: 'You are an orthodontic assistant. The user has a braces problem. Provide a helpful, safe response. Recommend seeing an orthodontist.' },
-                  { role: 'user', content: englishQuery }
-                ]
-              });
-              finalAnswer = llmResponse.choices[0]?.message?.content?.trim() || SAFE_FALLBACKS.english;
+              // ID in cache but not in DB? Weird. Fallback to search.
+              log('[PIPELINE] Cached FAQ ID not found in current DB, re-running search');
             }
+          } else {
+            // Cached ID is NULL. This means "Last time we checked, there was no matching FAQ".
+            // So we TRUST that decision and skip search.
+            log('[PIPELINE] Using CACHED result: NO FAQ matched previously.');
+            shouldRunFaqSearch = false;
           }
-        } catch (e) {
-          log('[PIPELINE] FAQ logic failed', e);
-          finalAnswer = SAFE_FALLBACKS.english;
+        }
+
+        if (shouldRunFaqSearch) {
+          try {
+            const intentEmbeddingResponse = await openai.embeddings.create({
+              model: 'text-embedding-3-small',
+              input: canonicalIntent,
+            });
+            const intentEmbedding = intentEmbeddingResponse.data[0]?.embedding || [];
+
+            if (intentEmbedding.length > 0) {
+              const topFAQs = getTopFAQs(intentEmbedding, faqs, 5);
+              log('[PIPELINE] Top 5 FAQs found (Running selection)');
+
+              selectedFAQ = await selectBestFAQWithLLM(canonicalIntent, topFAQs, openai);
+
+              if (selectedFAQ) {
+                resolvedFaqIdForCache = selectedFAQ.id;
+                log('[PIPELINE] ✅ FAQ matched:', selectedFAQ.id);
+              } else {
+                resolvedFaqIdForCache = null; // Explicitly no match
+                log('[PIPELINE] ❌ No FAQ match - generating answer with LLM');
+              }
+            }
+          } catch (e) {
+            log('[PIPELINE] FAQ logic failed', e);
+            resolvedFaqIdForCache = null;
+            finalAnswer = SAFE_FALLBACKS.english;
+          }
+        } else {
+          // If we skipped search
+          if (selectedFAQ) {
+            resolvedFaqIdForCache = selectedFAQ.id;
+          } else {
+            resolvedFaqIdForCache = null;
+          }
+        }
+
+        // Generate Answer based on selection
+        if (selectedFAQ) {
+          finalAnswer = selectedFAQ.answer;
+          selectedMedia = selectMediaFromLinkedIds(selectedFAQ.media_ids, media);
+        } else {
+          // Fallback generation
+          try {
+            const llmResponse = await openai.chat.completions.create({
+              model: 'gpt-4o-mini',
+              messages: [
+                { role: 'system', content: 'You are an orthodontic assistant. The user has a braces problem. Provide a helpful, safe response. Recommend seeing an orthodontist.' },
+                { role: 'user', content: englishQuery }
+              ]
+            });
+            finalAnswer = llmResponse.choices[0]?.message?.content?.trim() || SAFE_FALLBACKS.english;
+          } catch {
+            finalAnswer = SAFE_FALLBACKS.english;
+          }
         }
         break;
       }
@@ -652,13 +778,41 @@ export default async function handler(req: Request) {
       }
     }
 
-    // 6. Translate Answer Back (if needed)
+    // 6. Translate Answer Back
     if (language !== 'english' && !['GREETING', 'META', 'IRRELEVANT'].includes(route)) {
       log('[PIPELINE] Translating answer back to', language);
       finalAnswer = await translateFromEnglish(finalAnswer, language, openai);
     }
 
     log(`[PIPELINE_DONE] QueryId: ${queryId} | Route: ${route} | Media: ${selectedMedia.length}`);
+
+    // --- WRITE CACHE TO DB ---
+    // Update the LATEST message from this user to include the computed fields.
+    // We assume the frontend just inserted the message, so it's the most recent one.
+    try {
+      const updateResult = await db.execute({
+        sql: `UPDATE chat_messages 
+                  SET canonical_intent = ?, 
+                      route = ?, 
+                      resolved_faq_id = ?, 
+                      pipeline_version = ? 
+                  WHERE id = (
+                    SELECT id FROM chat_messages 
+                    WHERE sender = 'user' 
+                    ORDER BY created_at DESC 
+                    LIMIT 1
+                  ) AND sender = 'user'`, // Checking sender again for safety
+        args: [
+          canonicalIntent,
+          route,
+          resolvedFaqIdForCache, // Can be null
+          PIPELINE_VERSION
+        ]
+      });
+      log('[CACHE] Updated latest message row with pipeline decisions.');
+    } catch (e) {
+      log('[CACHE] Failed to update message row', e);
+    }
 
     return new Response(
       JSON.stringify({
@@ -670,7 +824,6 @@ export default async function handler(req: Request) {
       } as BotResponse),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-
   } catch (error) {
     log('Chat function error:', error);
     return new Response(
