@@ -130,7 +130,36 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, description, icon }) 
 const DashboardPage: React.FC<DashboardPageProps> = ({ faqs, stats, loading, refreshData, showToast }) => {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [cacheEnabled, setCacheEnabled] = useState(true);
+    const [isCacheLoading, setIsCacheLoading] = useState(false);
     const mostAskedQuestions = [...faqs].sort((a, b) => b.asked_count - a.asked_count).slice(0, 5);
+
+    useEffect(() => {
+        loadCacheStatus();
+    }, []);
+
+    const loadCacheStatus = async () => {
+        try {
+            const { enabled } = await api.getCacheStatus();
+            setCacheEnabled(enabled);
+        } catch (error) {
+            console.error('Failed to load cache status:', error);
+        }
+    };
+
+    const handleToggleCache = async () => {
+        setIsCacheLoading(true);
+        try {
+            const { enabled } = await api.setCacheStatus(!cacheEnabled);
+            setCacheEnabled(enabled);
+            showToast(`Cache ${enabled ? 'enabled' : 'disabled'} successfully`, 'success');
+        } catch (error: any) {
+            console.error('Failed to toggle cache:', error);
+            showToast(`Failed to toggle cache: ${error?.message || 'Unknown error'}`, 'error');
+        } finally {
+            setIsCacheLoading(false);
+        }
+    };
 
     const handleResetUserData = async () => {
         setIsModalOpen(false);
@@ -235,6 +264,34 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ faqs, stats, loading, ref
                     )}
                 </div>
             </div>
+
+            {/* Settings Section */}
+            <div className="mt-8 bg-surface p-6 rounded-xl border border-border">
+                <h2 className="text-xl font-bold text-text-primary mb-2">Settings</h2>
+                <p className="text-sm text-text-secondary mb-6">Configure application behavior</p>
+
+                <div className="flex items-center justify-between p-4 bg-background rounded-lg border border-border">
+                    <div className="flex-1">
+                        <h3 className="font-semibold text-text-primary">Response Cache</h3>
+                        <p className="text-sm text-text-secondary mt-1">
+                            When enabled, the chatbot will use cached intent and route decisions for repeated queries,
+                            making responses faster. Disable for testing new FAQ changes.
+                        </p>
+                    </div>
+                    <button
+                        onClick={handleToggleCache}
+                        disabled={isCacheLoading}
+                        className={`ml-4 relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed ${cacheEnabled ? 'bg-primary' : 'bg-surface-light'
+                            }`}
+                    >
+                        <span
+                            className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${cacheEnabled ? 'translate-x-7' : 'translate-x-0'
+                                }`}
+                        />
+                    </button>
+                </div>
+            </div>
+
             <div className="mt-8 bg-surface p-6 rounded-xl border border-accent/30">
                 <h2 className="text-xl font-bold text-accent">Danger Zone</h2>
                 <p className="text-sm text-text-secondary mt-2 mb-6">These actions are irreversible. Please proceed with caution.</p>

@@ -29,145 +29,7 @@ import {
 
 // ... (existing code)
 
-const handleSend = useCallback(
-    async (messageText?: string, suggestionFaqId?: number) => {
-        if (isConversationLoading) return;
-        const userInput = messageText || input;
-        if (userInput.trim() === '' || isLoading || !currentUser) return;
 
-        // Check for /debug command
-        if (userInput.trim().toLowerCase() === '/debug') {
-            if (isAdmin()) {
-                navigate('/dashboard/reports');
-            } else {
-                // Not admin - redirect to login with return path
-                navigate('/login?redirect=/dashboard/reports');
-            }
-            if (!messageText) {
-                setInput('');
-            }
-            return;
-        }
-
-        if (!messageText) {
-            setInput('');
-        }
-
-        let currentConversationId = activeConversationId;
-        const userMessagePayload = { sender: 'user' as const, text: userInput };
-
-        try {
-            if (!currentConversationId) {
-                setIsLoading(true);
-                const tempUserMsg = addMessageToState(
-                    userMessagePayload,
-                    0,
-                    messages.length === 0,
-                );
-
-                const newConversation = await api.createConversation(
-                    currentUser.id,
-                    userInput,
-                );
-                currentConversationId = newConversation.id;
-
-                setConversations(prev => [newConversation, ...prev]);
-                setActiveConversationId(currentConversationId);
-
-                setMessages(prev =>
-                    prev.map(m =>
-                        m.id === tempUserMsg.id
-                            ? { ...m, conversation_id: currentConversationId! }
-                            : m,
-                    ),
-                );
-
-                await api.createMessage({
-                    conversationId: currentConversationId,
-                    sender: userMessagePayload.sender,
-                    text: userMessagePayload.text,
-                });
-            } else {
-                addMessageToState(userMessagePayload, currentConversationId);
-                await api.createMessage({
-                    conversationId: currentConversationId,
-                    sender: userMessagePayload.sender,
-                    text: userMessagePayload.text,
-                });
-            }
-
-            setIsLoading(true);
-            setIsThinking(true);
-
-            // ⬇️ Call Edge Function for bot response (OpenAI key stays server-side)
-            const botResponse = await api.getBotResponse({
-                message: userInput,
-                userName: currentUser.name,
-                userId: currentUser.id,
-                suggestionFaqId, // Pass suggestionFaqId if present
-            });
-
-            if (botResponse.faqId) {
-                incrementFaqCount(botResponse.faqId);
-            }
-
-            const mediaUrls = botResponse.mediaUrls || [];
-
-            const botMessagePayload = {
-                sender: 'bot' as const,
-                text: botResponse.text,
-                mediaUrls,
-                queryId: botResponse.queryId,
-                suggestions: botResponse.suggestions, // Add suggestions to state
-            };
-            console.log('[BOT_RESPONSE]', {
-                question: userInput,
-                faqId: botResponse.faqId,
-                mediaUrls,
-                suggestions: botResponse.suggestions,
-            });
-
-            if (botResponse.pipelineLogs && botResponse.pipelineLogs.length > 0) {
-                console.group('🤖 BOT PIPELINE DEBUG LOGS');
-                botResponse.pipelineLogs.forEach(log => console.log(log));
-                console.groupEnd();
-            }
-
-            addMessageToState(botMessagePayload, currentConversationId!);
-            setIsThinking(false);
-
-            // Note: We are NOT persisting suggestions to DB, they are ephemeral for the session
-            await api.createMessage({
-                conversationId: currentConversationId!,
-                sender: botMessagePayload.sender,
-                text: botMessagePayload.text,
-                mediaUrls: botMessagePayload.mediaUrls,
-                queryId: botMessagePayload.queryId,
-            });
-        } catch (error: any) {
-            console.error('Error sending message:', error);
-            setIsThinking(false);
-            showToast(
-                `Could not send message: ${error.message || 'Unknown error'}`,
-                'error',
-            );
-        } finally {
-            setIsLoading(false);
-        }
-    },
-    [
-        activeConversationId,
-        currentUser,
-        incrementFaqCount,
-        input,
-        isLoading,
-        isConversationLoading,
-        messages.length,
-        showToast,
-        navigate,
-        messages,
-    ],
-);
 
 const SIDEBAR_BG = 'bg-[#1A1F2E] border-[#08101a]';
 
@@ -379,65 +241,8 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
         return newMessage;
     };
 
-    const handleNewChat = useCallback(() => {
-        setActiveConversationId(null);
-        setMessages([]);
-        if (window.innerWidth < 768) setIsSidebarOpen(false);
-    }, []);
-
-    const handleSelectConversation = useCallback(
-        async (id: number) => {
-            if (isThinking) return;
-
-            setActiveConversationId(id);
-            setIsConversationLoading(true);
-            try {
-                const data = await api.getConversationMessages(id);
-                setMessages(data);
-            } catch (error) {
-                console.error('Error loading messages:', error);
-                showToast('Could not load messages for this conversation.', 'error');
-            } finally {
-                setIsConversationLoading(false);
-                if (window.innerWidth < 768) setIsSidebarOpen(false);
-            }
-        },
-        [isThinking, showToast],
-    );
-
-    const loadConversations = useCallback(
-        async (user: User) => {
-            if (!user) return;
-            try {
-                const data = await api.getUserConversations(user.id);
-                const conversationsWithTitles = data.map(convo => ({
-                    ...convo,
-                    title:
-                        convo.title || `Chat from ${new Date(convo.created_at).toLocaleDateString()}`,
-                }));
-                setConversations(conversationsWithTitles);
-
-                if (!initialLoadComplete.current) {
-                    if (conversationsWithTitles.length > 0) {
-                        handleSelectConversation(conversationsWithTitles[0].id);
-                    } else {
-                        handleNewChat();
-                    }
-                    initialLoadComplete.current = true;
-                }
-            } catch (error: any) {
-                console.error('Error loading conversations:', error);
-                showToast(
-                    `Could not load conversations: ${error.message || 'Unknown error'}`,
-                    'error',
-                );
-            }
-        },
-        [handleNewChat, handleSelectConversation, showToast],
-    );
-
     const handleSend = useCallback(
-        async (messageText?: string) => {
+        async (messageText?: string, suggestionFaqId?: number) => {
             if (isConversationLoading) return;
             const userInput = messageText || input;
             if (userInput.trim() === '' || isLoading || !currentUser) return;
@@ -511,6 +316,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                     message: userInput,
                     userName: currentUser.name,
                     userId: currentUser.id,
+                    suggestionFaqId, // Pass suggestionFaqId if present
                 });
 
                 if (botResponse.faqId) {
@@ -524,11 +330,13 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                     text: botResponse.text,
                     mediaUrls,
                     queryId: botResponse.queryId,
+                    suggestions: botResponse.suggestions, // Add suggestions to state
                 };
                 console.log('[BOT_RESPONSE]', {
                     question: userInput,
                     faqId: botResponse.faqId,
                     mediaUrls,
+                    suggestions: botResponse.suggestions,
                 });
 
                 if (botResponse.pipelineLogs && botResponse.pipelineLogs.length > 0) {
@@ -540,12 +348,14 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                 addMessageToState(botMessagePayload, currentConversationId!);
                 setIsThinking(false);
 
+                // Persist bot message with suggestions
                 await api.createMessage({
                     conversationId: currentConversationId!,
                     sender: botMessagePayload.sender,
                     text: botMessagePayload.text,
                     mediaUrls: botMessagePayload.mediaUrls,
                     queryId: botMessagePayload.queryId,
+                    suggestions: botMessagePayload.suggestions,
                 });
             } catch (error: any) {
                 console.error('Error sending message:', error);
@@ -571,6 +381,66 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
             messages,
         ],
     );
+
+
+    const handleNewChat = useCallback(() => {
+        setActiveConversationId(null);
+        setMessages([]);
+        if (window.innerWidth < 768) setIsSidebarOpen(false);
+    }, []);
+
+    const handleSelectConversation = useCallback(
+        async (id: number) => {
+            if (isThinking) return;
+
+            setActiveConversationId(id);
+            setIsConversationLoading(true);
+            try {
+                const data = await api.getConversationMessages(id);
+                setMessages(data);
+            } catch (error) {
+                console.error('Error loading messages:', error);
+                showToast('Could not load messages for this conversation.', 'error');
+            } finally {
+                setIsConversationLoading(false);
+                if (window.innerWidth < 768) setIsSidebarOpen(false);
+            }
+        },
+        [isThinking, showToast],
+    );
+
+    const loadConversations = useCallback(
+        async (user: User) => {
+            if (!user) return;
+            try {
+                const data = await api.getUserConversations(user.id);
+                const conversationsWithTitles = data.map(convo => ({
+                    ...convo,
+                    title:
+                        convo.title || `Chat from ${new Date(convo.created_at).toLocaleDateString()}`,
+                }));
+                setConversations(conversationsWithTitles);
+
+                if (!initialLoadComplete.current) {
+                    if (conversationsWithTitles.length > 0) {
+                        handleSelectConversation(conversationsWithTitles[0].id);
+                    } else {
+                        handleNewChat();
+                    }
+                    initialLoadComplete.current = true;
+                }
+            } catch (error: any) {
+                console.error('Error loading conversations:', error);
+                showToast(
+                    `Could not load conversations: ${error.message || 'Unknown error'}`,
+                    'error',
+                );
+            }
+        },
+        [handleNewChat, handleSelectConversation, showToast],
+    );
+
+
 
     useEffect(() => {
         const checkUserSession = async () => {
@@ -933,22 +803,17 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
 
                 {/* Suggestions Chips - Only for Bot Messages */}
                 {!isUserMessage && message.suggestions && message.suggestions.length > 0 && (
-                    <div className="mt-4 flex flex-wrap gap-2 animate-fade-in-up">
+                    <div className="mt-6 flex flex-col gap-2">
                         {message.suggestions.map((suggestion, idx) => (
                             <button
                                 key={`${suggestion.linked_faq_id}-${idx}`}
                                 onClick={() => handleSend(suggestion.text_en, suggestion.linked_faq_id)}
-                                className="group flex flex-col items-start bg-surface-light/50 hover:bg-primary/10 border border-primary/20 hover:border-primary/50 text-text-primary px-3 py-2 rounded-xl transition-all duration-300 text-left"
+                                className="group w-full bg-surface-light/50 hover:bg-surface-light border border-border/50 hover:border-primary/50 text-text-primary px-4 py-3 rounded-xl transition-all duration-200 text-left shadow-sm hover:shadow-md active:scale-[0.98]"
                             >
-                                <span className="text-sm font-semibold group-hover:text-primary transition-colors flex items-center gap-1">
-                                    <ChipIcon className="w-3 h-3 text-primary/70 group-hover:text-primary" />
+                                <span className="text-sm font-medium text-text-primary group-hover:text-primary transition-colors flex items-center gap-2">
+                                    <ChipIcon className="w-4 h-4 text-white shrink-0" />
                                     {suggestion.text_en}
                                 </span>
-                                {suggestion.text_ur && (
-                                    <span className="text-xs text-text-secondary/80 group-hover:text-text-primary transition-colors font-urdu mt-0.5">
-                                        {suggestion.text_ur}
-                                    </span>
-                                )}
                             </button>
                         ))}
                     </div>

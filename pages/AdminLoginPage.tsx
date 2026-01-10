@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { LockIcon, EyeIcon, EyeOffIcon } from '../components/icons';
 import { setAdminStatus, isAdmin } from '../lib/auth';
 
-const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD;
+const ADMIN_PASSWORD = import.meta.env.ADMIN_PASSWORD;
 
 interface AdminLoginPageProps {
     onLoginSuccess: () => void;
@@ -40,7 +40,7 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }) => {
         try {
             // Simple password-based authentication
             if (!ADMIN_PASSWORD) {
-                setError('Admin password not configured. Please set VITE_ADMIN_PASSWORD environment variable.');
+                setError('Admin password not configured. Please set ADMIN_PASSWORD environment variable.');
                 return;
             }
 
@@ -64,7 +64,7 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }) => {
     return (
         <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
             <div className="w-full max-w-sm mx-auto">
-                 <div className="text-center mb-8">
+                <div className="text-center mb-8">
                     <div className="inline-flex items-center justify-center bg-primary/10 text-primary w-16 h-16 rounded-full mb-4 border-2 border-primary/20">
                         <LockIcon />
                     </div>
@@ -75,7 +75,7 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }) => {
                 <div className="bg-surface p-8 rounded-xl shadow-lg border border-border">
                     <form onSubmit={handleLogin} className="space-y-6">
                         <div>
-                            <label htmlFor="password"className="block text-sm font-medium text-text-secondary mb-2">Password</label>
+                            <label htmlFor="password" className="block text-sm font-medium text-text-secondary mb-2">Password</label>
                             <div className="relative">
                                 <input
                                     id="password"
@@ -108,7 +108,7 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }) => {
                     </form>
                 </div>
                 <div className="text-center mt-6">
-                     <button onClick={() => navigate('/chat')} className="text-sm text-text-secondary hover:text-primary transition-colors">
+                    <button onClick={() => navigate('/chat')} className="text-sm text-text-secondary hover:text-primary transition-colors">
                         &larr; Back to Chatbot
                     </button>
                 </div>

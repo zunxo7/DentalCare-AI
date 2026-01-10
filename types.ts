@@ -12,7 +12,7 @@ export interface FAQ {
 
 export interface Media {
   id: number;
-  filename: string;
+  title: string;
   description?: string;
   type?: 'image' | 'video';
   created_at?: string;

@@ -1,7 +1,7 @@
 
 import { createClient } from '@libsql/client';
 import OpenAI from 'openai';
-import * as dbHelpers from '../lib/dbHelpers.js';
+import * as dbHelpers from '../lib/dbHelpers';
 
 export const config = { runtime: 'edge' };
 
@@ -19,7 +19,7 @@ export default async function handler(req: Request) {
     }
 
     const db = createClient({
-        url: process.env.TURSO_DATABASE_URL!,
+        url: process.env.TURSO_DATABASE_URL || 'libsql://dentalcare-ai-zunxo7.aws-ap-south-1.turso.io',
         authToken: process.env.TURSO_AUTH_TOKEN,
     });
 
@@ -110,6 +110,66 @@ export default async function handler(req: Request) {
 
             await dbHelpers.deleteWhere(db, 'suggestions', { column: 'id', value: Number(id) });
             return new Response(JSON.stringify({ success: true }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        if (req.method === 'PUT') {
+            const { id, keywords, chips } = await req.json();
+
+            if (!id || !keywords || !chips || !Array.isArray(chips) || chips.length === 0) {
+                return new Response('Missing id, keywords or chips', { status: 400, headers: corsHeaders });
+            }
+
+            // Process all chips: Translate in parallel
+            const processedChips = await Promise.all(chips.map(async (chip: any) => {
+                const translationPrompt = `
+                You are a professional translator for a dental chatbot.
+                Translate the following English phrase into:
+                1. Urdu (proper script)
+                2. Roman Urdu (phonetic alphabet)
+          
+                Phrase: "${chip.text_en}"
+          
+                Respond strictly in JSON format:
+                {
+                  "urdu": "...",
+                  "roman": "..."
+                }
+                `;
+
+                try {
+                    const completion = await openai.chat.completions.create({
+                        model: 'gpt-4o-mini',
+                        messages: [{ role: 'system', content: 'You are a translator.' }, { role: 'user', content: translationPrompt }],
+                        response_format: { type: 'json_object' },
+                    });
+
+                    const translations = JSON.parse(completion.choices[0].message.content || '{}');
+                    return {
+                        text_en: chip.text_en,
+                        text_ur: translations.urdu || chip.text_en,
+                        text_roman: translations.roman || chip.text_en,
+                        linked_faq_id: chip.linked_faq_id
+                    };
+                } catch (e) {
+                    console.error('Translation failed for chip:', chip.text_en, e);
+                    return {
+                        text_en: chip.text_en,
+                        text_ur: chip.text_en,
+                        text_roman: chip.text_en,
+                        linked_faq_id: chip.linked_faq_id
+                    };
+                }
+            }));
+
+            // Update in DB
+            await dbHelpers.update(db, 'suggestions', {
+                keywords,
+                chips_json: JSON.stringify(processedChips),
+            }, { column: 'id', value: Number(id) });
+
+            return new Response(JSON.stringify({ success: true, id }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }

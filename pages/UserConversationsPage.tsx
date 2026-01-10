@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from '../lib/apiClient';
 import type { UserWithStats, User, Conversation, ChatMessage, Media, FAQ } from '../types';
-import { SpinnerIcon, SearchIcon, BotIcon, UserCircleIcon, ChatIcon, BackIcon, VideoIcon, ImageIcon } from '../components/icons';
+import { SpinnerIcon, SearchIcon, BotIcon, UserCircleIcon, ChatIcon, BackIcon, VideoIcon, ImageIcon, ChipIcon } from '../components/icons';
 
 const SUGGESTION_PREFIX = '__FAQ_SUGGESTIONS__';
 const SUGGESTION_CHOICE_PREFIX = '__FAQ_SUGGESTION_CHOICE__';
@@ -307,8 +307,8 @@ const UserConversationsPage: React.FC = () => {
                                         key={user.id}
                                         onClick={() => handleSelectUser(user)}
                                         className={`p-3 rounded-xl cursor-pointer transition-all duration-200 border ${isSelected
-                                                ? 'bg-gradient-to-br from-primary/20 to-secondary/20 border-primary'
-                                                : 'bg-surface/50 backdrop-blur-sm border-border/30 hover:border-primary/30 hover:bg-surface-light/50'
+                                            ? 'bg-gradient-to-br from-primary/20 to-secondary/20 border-primary'
+                                            : 'bg-surface/50 backdrop-blur-sm border-border/30 hover:border-primary/30 hover:bg-surface-light/50'
                                             }`}
                                     >
                                         <div className="flex items-start gap-3">
@@ -484,6 +484,23 @@ const UserConversationsPage: React.FC = () => {
                                                                                         </p>
                                                                                     );
                                                                                 })}
+
+                                                                                {/* Suggestion Chips - from message.suggestions */}
+                                                                                {!alignRight && msg.suggestions && msg.suggestions.length > 0 && (
+                                                                                    <div className="mt-4 flex flex-col gap-2">
+                                                                                        {msg.suggestions.map((suggestion: any, idx: number) => (
+                                                                                            <div
+                                                                                                key={`${suggestion.linked_faq_id}-${idx}`}
+                                                                                                className="w-full bg-surface-light/50 border border-border/50 text-text-primary px-4 py-3 rounded-xl text-left shadow-sm"
+                                                                                            >
+                                                                                                <span className="text-sm font-medium text-text-primary flex items-center gap-2">
+                                                                                                    <ChipIcon className="w-4 h-4 text-white shrink-0" />
+                                                                                                    {suggestion.text_en}
+                                                                                                </span>
+                                                                                            </div>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                )}
                                                                             </div>
 
                                                                             {/* Timestamp */}

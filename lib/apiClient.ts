@@ -14,7 +14,7 @@ const API_BASE = '/api';
 
 // Get admin password from environment variable
 function getAdminPassword(): string | null {
-  return import.meta.env.VITE_ADMIN_PASSWORD || null;
+  return import.meta.env.ADMIN_PASSWORD || null;
 }
 
 // Check if URL is a reports GET endpoint (admin-only)
@@ -83,6 +83,7 @@ type RawMessageRow = {
   text: string;
   media_urls?: string[] | string | null; // Can be array or JSON string
   query_id?: string | null;
+  suggestions_json?: string | null; // JSON stringified suggestion chips
   created_at: string;
 };
 
@@ -104,6 +105,16 @@ function mapRawMessage(row: RawMessageRow): ChatMessage {
     }
   }
 
+  // Parse suggestions_json if present
+  let suggestions = undefined;
+  if (row.suggestions_json) {
+    try {
+      suggestions = JSON.parse(row.suggestions_json);
+    } catch {
+      suggestions = undefined;
+    }
+  }
+
   return {
     id: row.id,
     conversation_id: row.conversation_id,
@@ -111,6 +122,7 @@ function mapRawMessage(row: RawMessageRow): ChatMessage {
     text: row.text,
     mediaUrls: mediaUrls,
     queryId: row.query_id ?? null,
+    suggestions,
     created_at: row.created_at,
     timestamp: new Date(row.created_at).toLocaleString(),
   };
@@ -144,6 +156,9 @@ export const api = {
   deleteFaq: (id: number) =>
     request<void>(`${API_BASE}/faqs/${id}`, { method: 'DELETE' }),
 
+  deleteAllFaqs: () =>
+    request<void>(`${API_BASE}/faqs`, { method: 'DELETE' }),
+
 
 
   incrementFaqCount: (id: number) =>
@@ -160,6 +175,12 @@ export const api = {
 
   deleteSuggestion: (id: number) =>
     request<void>(`${API_BASE}/suggestions?id=${id}`, { method: 'DELETE' }),
+
+  updateSuggestion: (data: { id: number; keywords: string; chips: { text_en: string; linked_faq_id: number }[] }) =>
+    request<{ success: boolean; id: number }>(`${API_BASE}/suggestions`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
 
   // Media
   getMedia: () => request<Media[]>(`${API_BASE}/media`),
@@ -198,6 +219,16 @@ export const api = {
   resetAllUserData: () =>
     request<{ success: boolean; message: string }>(`${API_BASE}/reset-all-user-data`, {
       method: 'DELETE',
+    }),
+
+  // Cache Settings
+  getCacheStatus: () =>
+    request<{ enabled: boolean }>(`${API_BASE}/settings/cache`),
+
+  setCacheStatus: (enabled: boolean) =>
+    request<{ success: boolean; enabled: boolean }>(`${API_BASE}/settings/cache`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
     }),
 
   // Users
@@ -241,6 +272,7 @@ export const api = {
     text: string;
     mediaUrls?: string[];
     queryId?: string | null;
+    suggestions?: any[];
   }) => {
     const row = await request<RawMessageRow>(`${API_BASE}/messages`, {
       method: 'POST',

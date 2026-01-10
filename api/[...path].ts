@@ -3,7 +3,7 @@
 
 import { createClient } from '@libsql/client';
 import OpenAI from 'openai';
-import * as dbHelpers from '../lib/dbHelpers.js';
+import * as dbHelpers from '../lib/dbHelpers';
 
 export const config = { runtime: 'edge' };
 
@@ -16,12 +16,12 @@ const corsHeaders = {
 function getAdminPassword(req: Request): string | null {
   const headerPassword = req.headers.get('x-admin-password');
   if (headerPassword) return headerPassword;
-  return process.env.ADMIN_PASSWORD || process.env.VITE_ADMIN_PASSWORD || null;
+  return process.env.ADMIN_PASSWORD || null;
 }
 
 // Helper: Check if request requires admin
 function requireAdmin(req: Request): { authorized: boolean; error?: string } {
-  const adminPassword = process.env.ADMIN_PASSWORD || process.env.VITE_ADMIN_PASSWORD;
+  const adminPassword = process.env.ADMIN_PASSWORD;
   if (!adminPassword) {
     return { authorized: false, error: 'Server configuration error: Admin password not set' };
   }
@@ -105,6 +105,19 @@ function jsonResponse(data: any, status: number = 200) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
+}
+
+// Helper: Reset SQLite auto-increment sequence for a table
+async function resetSequence(db: any, tableName: string) {
+  try {
+    await db.execute({
+      sql: `DELETE FROM sqlite_sequence WHERE name = ?`,
+      args: [tableName]
+    });
+  } catch (e) {
+    // sqlite_sequence may not exist if table never had auto-increment inserts
+    console.log(`[DB] Could not reset sequence for ${tableName}:`, e);
+  }
 }
 
 // Helper: Error response
@@ -226,6 +239,7 @@ export default async function handler(req: Request) {
 
     if (path === '/api/faqs' && method === 'DELETE') {
       await dbHelpers.deleteAll(db, 'faqs');
+      await resetSequence(db, 'faqs');
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
@@ -347,6 +361,7 @@ export default async function handler(req: Request) {
 
     if (path === '/api/media' && method === 'DELETE') {
       await dbHelpers.deleteAll(db, 'media');
+      await resetSequence(db, 'media');
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
@@ -547,7 +562,7 @@ export default async function handler(req: Request) {
         db,
         'chat_messages',
         { column: 'conversation_id', value: id },
-        'id, conversation_id, sender, text, media_urls, query_id, created_at',
+        'id, conversation_id, sender, text, media_urls, query_id, suggestions_json, created_at',
         { column: 'created_at', ascending: true }
       );
       return jsonResponse(data || []);
@@ -556,20 +571,42 @@ export default async function handler(req: Request) {
     // Route: /api/messages
     if (path === '/api/messages' && method === 'POST') {
       const body = await req.json();
-      const { conversationId, sender, text, mediaUrls, queryId } = body || {};
+      const { conversationId, sender, text, mediaUrls, queryId, suggestions } = body || {};
+
+      console.log('[API_MESSAGES] Creating message with suggestions:', suggestions ? suggestions.length : 0);
 
       if (!conversationId || !sender || !text) {
         return errorResponse('conversationId, sender and text are required', 400);
       }
 
-      const data = await dbHelpers.insert(db, 'chat_messages', {
-        conversation_id: conversationId,
-        sender,
-        text,
-        media_urls: JSON.stringify(mediaUrls || []),
-        query_id: queryId || null,
-      });
-      return jsonResponse(data, 201);
+      try {
+        console.log('[API_MESSAGES] Saving with suggestions_json:', suggestions && suggestions.length > 0 ? `${suggestions.length} chips` : 'none');
+        const data = await dbHelpers.insert(db, 'chat_messages', {
+          conversation_id: conversationId,
+          sender,
+          text,
+          media_urls: JSON.stringify(mediaUrls || []),
+          query_id: queryId || null,
+          suggestions_json: suggestions && suggestions.length > 0 ? JSON.stringify(suggestions) : null,
+        });
+        console.log('[API_MESSAGES] Insert SUCCESS with suggestions');
+        return jsonResponse(data, 201);
+      } catch (insertErr: any) {
+        console.error('[API_MESSAGES] Insert error:', insertErr.message);
+        // If suggestions_json column doesn't exist, retry without it
+        if (insertErr.message && insertErr.message.includes('suggestions_json')) {
+          console.log('[API_MESSAGES] FALLBACK - suggestions_json column not found, retrying without');
+          const data = await dbHelpers.insert(db, 'chat_messages', {
+            conversation_id: conversationId,
+            sender,
+            text,
+            media_urls: JSON.stringify(mediaUrls || []),
+            query_id: queryId || null,
+          });
+          return jsonResponse(data, 201);
+        }
+        throw insertErr;
+      }
     }
 
     // Route: /api/reports
@@ -617,6 +654,7 @@ export default async function handler(req: Request) {
         return jsonResponse({ success: true, message: 'Report deleted' });
       } else {
         await dbHelpers.deleteAll(db, 'user_reports');
+        await resetSequence(db, 'user_reports');
         return jsonResponse({ success: true, message: 'All reports cleared' });
       }
     }
@@ -731,9 +769,17 @@ export default async function handler(req: Request) {
       try {
         // Order matters for foreign keys
         await db.execute("DELETE FROM user_reports");
+        await resetSequence(db, 'user_reports');
+
         await db.execute("DELETE FROM chat_messages");
+        await resetSequence(db, 'chat_messages');
+
         await db.execute("DELETE FROM conversations");
+        await resetSequence(db, 'conversations');
+
         await db.execute("DELETE FROM users");
+        await resetSequence(db, 'users');
+
         // Reset FAQ asked counts
         await db.execute("UPDATE faqs SET asked_count = 0");
 
@@ -741,6 +787,44 @@ export default async function handler(req: Request) {
       } catch (error: any) {
         console.error('Reset user data failed:', error);
         return errorResponse('Failed to reset user data', 500, error.message);
+      }
+    }
+
+    // Route: /api/settings/cache - GET and PUT
+    if (path === '/api/settings/cache') {
+      const adminCheck = requireAdmin(req);
+      if (!adminCheck.authorized) return errorResponse(adminCheck.error || 'Access denied', 403);
+
+      if (method === 'GET') {
+        try {
+          const setting = await dbHelpers.selectOne(db, 'app_settings', { column: 'key', value: 'cache_enabled' });
+          const enabled = setting?.value !== 'false';
+          return jsonResponse({ enabled });
+        } catch (error: any) {
+          console.error('Get cache status failed:', error);
+          return jsonResponse({ enabled: true }); // Default to enabled
+        }
+      }
+
+      if (method === 'PUT') {
+        try {
+          const body = await req.json();
+          const enabled = body.enabled !== false;
+
+          // Check if setting exists
+          const existing = await dbHelpers.selectOne(db, 'app_settings', { column: 'key', value: 'cache_enabled' });
+
+          if (existing) {
+            await dbHelpers.update(db, 'app_settings', { value: String(enabled) }, { column: 'key', value: 'cache_enabled' });
+          } else {
+            await dbHelpers.insert(db, 'app_settings', { key: 'cache_enabled', value: String(enabled) });
+          }
+
+          return jsonResponse({ success: true, enabled });
+        } catch (error: any) {
+          console.error('Update cache status failed:', error);
+          return errorResponse('Failed to update cache status', 500, error.message);
+        }
       }
     }
 

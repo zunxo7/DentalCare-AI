@@ -3,7 +3,7 @@
 
 import { createClient } from '@libsql/client';
 import OpenAI from 'openai';
-import * as dbHelpers from '../lib/dbHelpers.js';
+import * as dbHelpers from '../lib/dbHelpers';
 
 import { SuggestionChip } from '../types';
 
@@ -322,43 +322,76 @@ You MUST output EXACTLY ONE of the following labels:
 DO NOT output anything else.
 DO NOT explain your decision.
 
-DEFINITIONS (FOLLOW STRICTLY):
+━━━━━━━━━━━━━━━━━━
+CORE RULE (MOST IMPORTANT):
 
-GREETING:
-- Greetings or salutations only.
-- Examples: hi, hello, salam, hey.
+If the intent is something a user would want to DO, FIX, USE, HANDLE, TREAT, CLEAN, or PERFORM,
+it is FAQ — even if it looks like a topic.
 
-META:
-- Questions about the assistant or the user.
-- Examples: what is your name, who are you, what is my name.
+Examples that MUST be FAQ:
+- brushing braces properly
+- using dental wax
+- cleaning aligners
+- wire poking cheek
+- loose bracket
+- pain from braces
+- food stuck in braces
+- tightening braces
 
-IRRELEVANT:
-- Not related to dentistry or oral health.
-- Spam, jokes, random topics, nonsense.
+━━━━━━━━━━━━━━━━━━
+DEFINITIONS
 
-EDUCATION:
-- Asking WHAT something is, WHAT it does, WHY it exists, or its function or purpose.
-- Explanations, overviews, definitions.
-- NOT asking how to fix or treat something.
+GREETING
+Short greetings only.
+Examples: hi, hello, salam, hey
 
-FAQ:
-- A braces-related problem or how-to.
-- Mechanical issues, symptoms, or actions.
-- Examples: wire poking, bracket loose, how to use wax, pain from braces.
+META
+Questions about the assistant or the user.
+Examples: who are you, what is my name
 
-GENERAL:
-- Dental topics outside orthodontics.
-- Veneers, crowns, implants, cosmetic dentistry, general tooth pain not tied to braces.
+IRRELEVANT
+Not about teeth, braces, or oral health.
 
-IMPORTANT RULES:
-- If the intent is explanatory → EDUCATION.
-- If the intent is a braces problem or how-to → FAQ.
-- If the intent is dental but NOT orthodontics → GENERAL.
-- If there is ANY doubt → EDUCATION.
-- NEVER choose FAQ unless the intent clearly describes a braces-related issue.
+EDUCATION
+Only when the user wants to understand WHAT something is or WHY it exists.
+These are knowledge-only topics with no action or problem implied.
 
-OUTPUT FORMAT:
-Return ONLY ONE WORD from the list above.`
+Examples:
+- what are braces
+- what is an orthodontist
+- why braces are used
+- types of braces
+- how braces work
+
+FAQ
+Any braces-related PROBLEM or ACTION.
+If the user might expect instructions, steps, fixes, or help → FAQ.
+
+Includes:
+- cleaning
+- brushing
+- pain
+- damage
+- irritation
+- broken parts
+- how to use something
+- how to fix something
+
+GENERAL
+Dental topics not related to orthodontics.
+Examples: cavities, implants, veneers, toothache not from braces
+
+━━━━━━━━━━━━━━━━━━
+DECISION RULE
+
+If the intent could be answered with steps, tips, or treatment → FAQ
+If the intent could be answered with a definition or explanation → EDUCATION
+
+When in doubt → FAQ
+
+━━━━━━━━━━━━━━━━━━
+
+Return ONLY ONE label.`
             },
             {
               role: 'user',
@@ -391,17 +424,92 @@ Return ONLY ONE WORD from the list above.`
       messages: [
         {
           role: 'system',
-          content: `You are a STRICT request router. Output EXACTLY ONE label: GREETING, META, IRRELEVANT, EDUCATION, FAQ, GENERAL.
+          content: `You are a STRICT request router.
 
-Definitions:
-GREETING: Salutations.
-META: Questions about bot/user.
-IRRELEVANT: Non-dental topics.
-EDUCATION: Explaining what/why (definitions, purposes).
-FAQ: Specific braces problems/how-tos.
-GENERAL: Non-orthodontic dental topics.
+You will be given a CANONICAL INTENT.
+Your task is to decide what kind of response the system should produce.
 
-Rule: Doubt -> EDUCATION.`
+You MUST output EXACTLY ONE of the following labels:
+- GREETING
+- META
+- IRRELEVANT
+- EDUCATION
+- FAQ
+- GENERAL
+
+DO NOT output anything else.
+DO NOT explain your decision.
+
+━━━━━━━━━━━━━━━━━━
+CORE RULE (MOST IMPORTANT):
+
+If the intent is something a user would want to DO, FIX, USE, HANDLE, TREAT, CLEAN, or PERFORM,
+it is FAQ — even if it looks like a topic.
+
+Examples that MUST be FAQ:
+- brushing braces properly
+- using dental wax
+- cleaning aligners
+- wire poking cheek
+- loose bracket
+- pain from braces
+- food stuck in braces
+- tightening braces
+
+━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+
+GREETING
+Short greetings only.
+Examples: hi, hello, salam, hey
+
+META
+Questions about the assistant or the user.
+Examples: who are you, what is my name
+
+IRRELEVANT
+Not about teeth, braces, or oral health.
+
+EDUCATION
+Only when the user wants to understand WHAT something is or WHY it exists.
+These are knowledge-only topics with no action or problem implied.
+
+Examples:
+- what are braces
+- what is an orthodontist
+- why braces are used
+- types of braces
+- how braces work
+
+FAQ
+Any braces-related PROBLEM or ACTION.
+If the user might expect instructions, steps, fixes, or help → FAQ.
+
+Includes:
+- cleaning
+- brushing
+- pain
+- damage
+- irritation
+- broken parts
+- how to use something
+- how to fix something
+
+GENERAL
+Dental topics not related to orthodontics.
+Examples: cavities, implants, veneers, toothache not from braces
+
+━━━━━━━━━━━━━━━━━━
+DECISION RULE
+
+If the intent could be answered with steps, tips, or treatment → FAQ
+If the intent could be answered with a definition or explanation → EDUCATION
+
+When in doubt → FAQ
+
+━━━━━━━━━━━━━━━━━━
+
+Return ONLY ONE label.`
         },
         { role: 'user', content: `Intent: "${canonicalIntent}"` }
       ],
@@ -565,29 +673,32 @@ export default async function handler(req: Request) {
 
         const selectedMedia = selectMediaFromLinkedIds(faq.media_ids ? JSON.parse(faq.media_ids) : [], media);
 
-        // Log conversation (User message is the chip text)
-        await dbHelpers.insert(db, 'chat_messages', {
-          query_id: queryId,
-          sender: 'user',
-          text: normalized,
-          raw_text: message,
-          canonical_intent: `SUGGESTION_CLICK:${suggestionFaqId}`,
-          route: 'FAQ',
-          resolved_faq_id: suggestionFaqId,
-          pipeline_version: PIPELINE_VERSION,
-          created_at: new Date().toISOString() // Fallback if DB doesn't auto-set
-        });
+        // Log conversation - wrapped in try-catch to not block response
+        try {
+          await dbHelpers.insert(db, 'chat_messages', {
+            query_id: queryId,
+            sender: 'user',
+            text: normalized,
+            canonical_intent: `SUGGESTION_CLICK:${suggestionFaqId}`,
+            route: 'FAQ',
+            resolved_faq_id: suggestionFaqId,
+            pipeline_version: PIPELINE_VERSION,
+            created_at: new Date().toISOString()
+          });
 
-        await dbHelpers.insert(db, 'chat_messages', {
-          query_id: queryId,
-          sender: 'bot',
-          text: finalAnswer,
-          raw_text: finalAnswer,
-          media_urls: JSON.stringify(selectedMedia),
-          resolved_faq_id: suggestionFaqId,
-          pipeline_version: PIPELINE_VERSION,
-          created_at: new Date().toISOString()
-        });
+          await dbHelpers.insert(db, 'chat_messages', {
+            query_id: queryId,
+            sender: 'bot',
+            text: finalAnswer,
+            media_urls: JSON.stringify(selectedMedia),
+            resolved_faq_id: suggestionFaqId,
+            pipeline_version: PIPELINE_VERSION,
+            created_at: new Date().toISOString()
+          });
+        } catch (logErr) {
+          console.error('[SUGGESTION_CLICK] Failed to log messages:', logErr);
+          // Continue anyway
+        }
 
         return new Response(
           JSON.stringify({
@@ -603,70 +714,11 @@ export default async function handler(req: Request) {
     }
 
 
-    // --- 1. SHORT QUERY CHECK (Suggestion Chips) ---
-    const wordCount = normalized.split(/\s+/).length;
-
-    if (wordCount <= 3) {
-      try {
-        const matchGroups = await dbHelpers.selectAll(db, 'suggestions');
-        const userWords = normalized.toLowerCase().split(/\s+/);
-
-        let collectedChips: any[] = [];
-
-        for (const group of matchGroups) {
-          const kws = (group.keywords || '').toLowerCase().split(',').map((k: string) => k.trim());
-          // Check if any keyword matches any user word OR is contained in the query
-          const isMatch = kws.some((k: string) => k && (userWords.includes(k) || normalized.includes(k)));
-
-          if (isMatch) {
-            const chips = JSON.parse(group.chips_json || '[]');
-            collectedChips = [...collectedChips, ...chips];
-          }
-        }
-
-        if (collectedChips.length > 0) {
-          let suggestReply = "Here are some suggestions:";
-          // Simple heuristic for Urdu/Roman
-          if (/[^\u0000-\u007F]/.test(normalized)) {
-            suggestReply = "یہاں کچھ تجاویز ہیں:";
-          }
-
-          await dbHelpers.insert(db, 'chat_messages', {
-            query_id: queryId,
-            sender: 'bot',
-            text: suggestReply,
-            raw_text: suggestReply,
-            media_urls: '[]',
-            pipeline_version: PIPELINE_VERSION,
-            created_at: new Date().toISOString()
-          });
-
-          return new Response(
-            JSON.stringify({
-              text: suggestReply,
-              mediaUrls: [],
-              faqId: null,
-              queryId,
-              suggestions: collectedChips,
-              pipelineLogs
-            } as BotResponse),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-      } catch (err) {
-        console.error('[SUGGESTION_LOGIC_ERROR]', err);
-        // Fall through to main pipeline if error
-      }
-    }
-
     // If not, we continue to the main pipeline.
 
     // --- CACHE LOGIC START ---
     let cacheEnabled = true;
     try {
-      const db = await dbHelpers.getDb(process.env.TURSO_DATABASE_URL!, process.env.TURSO_AUTH_TOKEN!); // Wait, db is already defined?
-      // Actually 'db' was defined at top of handler.
-      // But 'setting' needs to be defined.
       const setting = await dbHelpers.selectOne(db, 'app_settings', { column: 'key', value: 'cache_enabled' });
 
       if (setting && setting.value === 'false') {
@@ -743,6 +795,63 @@ export default async function handler(req: Request) {
       log('[PIPELINE] Computed intent:', canonicalIntent);
     }
 
+    // --- SUGGESTION CHIPS CHECK (using canonical intent) ---
+    // Only check if original query is short (3 words or less)
+    const queryWordCount = normalized.split(/\s+/).length;
+
+    if (queryWordCount <= 3) {
+      try {
+        const matchGroups = await dbHelpers.selectAll(db, 'suggestions');
+        const intentWords = canonicalIntent.toLowerCase().split(/\s+/);
+
+        let collectedChips: any[] = [];
+
+        for (const group of matchGroups) {
+          const kws = (group.keywords || '').toLowerCase().split(/\s+/).map((k: string) => k.trim()).filter((k: string) => k);
+
+          // Check if any keyword matches any intent word OR is contained in the canonical intent
+          const isMatch = kws.some((k: string) => k && (intentWords.includes(k) || canonicalIntent.toLowerCase().includes(k)));
+
+          if (isMatch) {
+            try {
+              const chips = JSON.parse(group.chips_json || '[]');
+              collectedChips = [...collectedChips, ...chips];
+              log(`[SUGGESTIONS] Matched group ${group.id} with ${chips.length} chips`);
+            } catch (e) {
+              log(`[SUGGESTIONS] Failed to parse chips for group ${group.id}`);
+            }
+          }
+        }
+
+        if (collectedChips.length > 0) {
+          log(`[SUGGESTIONS] Returning ${collectedChips.length} suggestions for query: "${normalized}"`);
+          let suggestReply = "Here are some suggestions:";
+          // Simple heuristic for Urdu/Roman
+          if (/[^\u0000-\u007F]/.test(normalized)) {
+            suggestReply = "یہاں کچھ تجاویز ہیں:";
+          }
+
+          // Return suggestions early
+          return new Response(
+            JSON.stringify({
+              text: suggestReply,
+              mediaUrls: [],
+              faqId: null,
+              queryId,
+              suggestions: collectedChips,
+              pipelineLogs
+            } as BotResponse),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      } catch (err) {
+        log('[SUGGESTIONS] Error in suggestion logic:', err);
+        // Fall through to main pipeline if error
+      }
+    }
+    // --- END SUGGESTION CHIPS CHECK ---
+
+
     // Load DB Resources
     const [faqs, media] = await Promise.all([
       dbHelpers.selectAll(db, 'faqs', 'id, question, answer, embedding, media_ids, intent'),
@@ -781,6 +890,7 @@ export default async function handler(req: Request) {
         try {
           const llmResponse = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
+            max_tokens: 250,
             messages: [
               {
                 role: 'system',
@@ -808,6 +918,7 @@ export default async function handler(req: Request) {
         try {
           const llmResponse = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
+            max_tokens: 250,
             messages: [
               {
                 role: 'system',
@@ -900,6 +1011,7 @@ export default async function handler(req: Request) {
           try {
             const llmResponse = await openai.chat.completions.create({
               model: 'gpt-4o-mini',
+              max_tokens: 250,
               messages: [
                 { role: 'system', content: 'You are an orthodontic assistant. The user has a braces problem. Provide a helpful, safe response. Recommend seeing an orthodontist.' },
                 { role: 'user', content: englishQuery }
@@ -964,7 +1076,19 @@ export default async function handler(req: Request) {
       } as BotResponse),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-  );
+  } catch (error: any) {
+    console.error('Chat function error:', error);
+    return new Response(
+      JSON.stringify({
+        error: 'Internal server error',
+        text: SAFE_FALLBACKS.english,
+        mediaUrls: [],
+        faqId: null,
+        queryId: `${Date.now()}-${Math.random().toString(36).substring(7)}`,
+        pipelineLogs: [],
+      } as BotResponse),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 }
 
