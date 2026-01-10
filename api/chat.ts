@@ -743,7 +743,7 @@ export default async function handler(req: Request) {
           sql: `SELECT canonical_intent, route, resolved_faq_id, query_id
                  FROM chat_messages 
                  WHERE sender = 'user' 
-                   AND text = ? 
+                   AND lower(text) = lower(?) 
                    AND pipeline_version = ?
                    AND route IS NOT NULL
                  ORDER BY created_at DESC 
@@ -873,6 +873,32 @@ export default async function handler(req: Request) {
           // Simple heuristic for Urdu/Roman
           if (/[^\u0000-\u007F]/.test(normalized)) {
             suggestReply = "یہاں کچھ تجاویز ہیں:";
+          }
+
+          // --- PERSIST TO CACHE BEFORE EARLY RETURN ---
+          try {
+            await db.execute({
+              sql: `UPDATE chat_messages 
+                        SET canonical_intent = ?, 
+                            route = ?, 
+                            pipeline_version = ?,
+                            query_id = ?
+                        WHERE id = (
+                          SELECT id FROM chat_messages 
+                          WHERE sender = 'user' 
+                          ORDER BY created_at DESC 
+                          LIMIT 1
+                        ) AND sender = 'user'`,
+              args: [
+                canonicalIntent,
+                'GENERAL', // Use GENERAL as fallback route
+                PIPELINE_VERSION,
+                queryId
+              ]
+            });
+            log('[CACHE] Updated latest message row (Suggestion Path)');
+          } catch (e) {
+            log('[CACHE] Failed to update message row (Suggestion Path)', e);
           }
 
           // Return suggestions early
@@ -1091,7 +1117,8 @@ export default async function handler(req: Request) {
                   SET canonical_intent = ?, 
                       route = ?, 
                       resolved_faq_id = ?, 
-                      pipeline_version = ? 
+                      pipeline_version = ?,
+                      query_id = ?
                   WHERE id = (
                     SELECT id FROM chat_messages 
                     WHERE sender = 'user' 
@@ -1102,7 +1129,8 @@ export default async function handler(req: Request) {
           canonicalIntent,
           route,
           resolvedFaqIdForCache, // Can be null
-          PIPELINE_VERSION
+          PIPELINE_VERSION,
+          queryId
         ]
       });
       log('[CACHE] Updated latest message row with pipeline decisions.');
