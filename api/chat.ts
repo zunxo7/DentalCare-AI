@@ -739,9 +739,8 @@ export default async function handler(req: Request) {
     if (cacheEnabled) {
       try {
         // Find RECENT message with SAME text and SAME version
-        // We limit to recent to avoid stale context if logic changes significantly in future versions
         const result = await db.execute({
-          sql: `SELECT canonical_intent, route, resolved_faq_id 
+          sql: `SELECT canonical_intent, route, resolved_faq_id, query_id
                  FROM chat_messages 
                  WHERE sender = 'user' 
                    AND text = ? 
@@ -754,12 +753,57 @@ export default async function handler(req: Request) {
 
         if (result.rows.length > 0) {
           const row = result.rows[0];
+
+          // 1. Try to fetch FULL bot response (Text + Media + Suggestions)
+          if (row.query_id) {
+            try {
+              const botRes = await db.execute({
+                sql: `SELECT text, media_urls, resolved_faq_id, suggestions_json 
+                      FROM chat_messages 
+                      WHERE query_id = ? AND sender = 'bot' 
+                      LIMIT 1`,
+                args: [row.query_id]
+              });
+
+              if (botRes.rows.length > 0) {
+                const botRow = botRes.rows[0];
+                log('[CACHE] FULL HIT - Returning fully cached response');
+
+                let mediaUrls: string[] = [];
+                try {
+                  mediaUrls = JSON.parse(botRow.media_urls as string || '[]');
+                } catch { }
+
+                let suggestions: any[] = [];
+                try {
+                  suggestions = JSON.parse(botRow.suggestions_json as string || '[]');
+                } catch { }
+
+                return new Response(
+                  JSON.stringify({
+                    text: botRow.text,
+                    mediaUrls: mediaUrls,
+                    faqId: botRow.resolved_faq_id,
+                    queryId, // Return NEW queryId for frontend tracking
+                    suggestions: suggestions.length > 0 ? suggestions : undefined,
+                    pipelineLogs: [...pipelineLogs, '[CACHE] FULL HIT - Response reused']
+                  } as BotResponse),
+                  { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                );
+              }
+            } catch (e) {
+              log('[CACHE] Full response lookup failed, falling back to partial', e);
+            }
+          }
+
+          // 2. Fallback to Partial Cache (reuse decisions but regenerate text)
           if (row.canonical_intent && row.route) {
             cachedIntent = row.canonical_intent as string;
             cachedRoute = row.route as RouteCategory;
+            // resolved_faq_id can be null, so check if column exists/was fetched
             cachedFaqId = row.resolved_faq_id as number | null;
             usingCached = true;
-            log('[CACHE] HIT - Reusing decisions from previous message');
+            log('[CACHE] PARTIAL HIT - Reusing intent/route, will regenerate text');
           }
         }
       } catch (e) {
