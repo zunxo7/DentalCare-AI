@@ -140,7 +140,7 @@ const ManageSuggestionsPage: React.FC<ManageSuggestionsPageProps> = ({ refreshDa
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
                     <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-text-primary mb-1 sm:mb-2">
-                        Suggestion Chips
+                        Suggestions
                     </h1>
                     <p className="text-sm text-text-secondary">
                         Manage quick-reply suggestions for short user queries
