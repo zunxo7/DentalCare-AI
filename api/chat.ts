@@ -16,6 +16,7 @@ interface BotRequest {
   message: string;
   userName: string;
   userId?: string | null;
+  suggestionFaqId?: number;
 }
 
 interface BotResponse {
@@ -517,7 +518,7 @@ export default async function handler(req: Request) {
     }
     const openai = new OpenAI({ apiKey: openaiApiKey });
 
-    const { message, userName, userId }: BotRequest = await req.json();
+    const { message, userName, userId, suggestionFaqId }: BotRequest = await req.json();
 
     if (!message || !userName) {
       return new Response(
@@ -539,6 +540,126 @@ export default async function handler(req: Request) {
     }
 
     const normalized = isValidInput(trimmed, MAX_INPUT_LENGTH) ? trimmed : truncateText(trimmed, MAX_INPUT_LENGTH);
+
+    // --- 0. SUGGESTION CLICK HANDLING (Direct Resolution) ---
+    if (suggestionFaqId) {
+      log(`[PIPELINE] Suggestion Click Detected: FAQ ID ${suggestionFaqId}`);
+
+      // Detect language of the *message* (the chip text) to reply in correct language
+      const detectedLang = detectLanguage(normalized);
+
+      const faq = await dbHelpers.selectOne(db, 'faqs', { column: 'id', value: suggestionFaqId });
+
+      if (faq) {
+        // Fetch media
+        const media = await dbHelpers.selectAll(db, 'media', 'id, title, url, type');
+
+        let finalAnswer = faq.answer;
+        // Translate answer if needed
+        if (detectedLang !== 'english') {
+          finalAnswer = await translateFromEnglish(finalAnswer, detectedLang, openai);
+        }
+
+        const selectedMedia = selectMediaFromLinkedIds(faq.media_ids ? JSON.parse(faq.media_ids) : [], media);
+
+        // Log conversation (User message is the chip text)
+        await dbHelpers.insert(db, 'chat_messages', {
+          query_id: queryId,
+          sender: 'user',
+          text: normalized,
+          raw_text: message,
+          canonical_intent: `SUGGESTION_CLICK:${suggestionFaqId}`,
+          route: 'FAQ',
+          resolved_faq_id: suggestionFaqId,
+          pipeline_version: PIPELINE_VERSION,
+          created_at: new Date().toISOString() // Fallback if DB doesn't auto-set
+        });
+
+        await dbHelpers.insert(db, 'chat_messages', {
+          query_id: queryId,
+          sender: 'bot',
+          text: finalAnswer,
+          raw_text: finalAnswer,
+          media_urls: JSON.stringify(selectedMedia),
+          resolved_faq_id: suggestionFaqId,
+          pipeline_version: PIPELINE_VERSION,
+          created_at: new Date().toISOString()
+        });
+
+        return new Response(
+          JSON.stringify({
+            text: finalAnswer,
+            mediaUrls: selectedMedia,
+            faqId: suggestionFaqId,
+            queryId,
+            pipelineLogs
+          } as BotResponse),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+
+    // --- 1. SHORT QUERY CHECK (Suggestion Chips) ---
+    const wordCount = normalized.split(/\s+/).length;
+    // Exclude greetings from suggestions? The user said "3 words or less".
+    // "Hi" is 1 word. "Hello" is 1 word.
+    // If strict compliance: return suggestions.
+    // "Hi" -> [Suggestions]. This might be annoying if I just want to say hi.
+    // But it effectively acts as a menu. "Hi" -> "Here are topics".
+    // I will strictly follow "3 words or less".
+
+    if (wordCount <= 3 && !suggestionFaqId) {
+      log(`[PIPELINE] Short query detected (${wordCount} words). Fetching suggestions.`);
+
+      const suggestions = await dbHelpers.selectAll(db, 'suggestions', '*');
+
+      if (suggestions.length > 0) {
+        // Log the user interaction
+        await dbHelpers.insert(db, 'chat_messages', {
+          query_id: queryId,
+          sender: 'user',
+          text: normalized,
+          raw_text: message,
+          canonical_intent: 'SHORT_QUERY_SUGGESTIONS',
+          route: 'system',
+          pipeline_version: PIPELINE_VERSION,
+          created_at: new Date().toISOString()
+        });
+
+        // Language specific text
+        const detectedLang = detectLanguage(normalized);
+        let replyText = "Here are some common topics you can ask about:";
+        if (detectedLang === 'urdu') replyText = "یہاں کچھ عام موضوعات ہیں جن کے بارے میں آپ پوچھ سکتے ہیں:";
+        if (detectedLang === 'roman') replyText = "Yahan kuch aam topics hain jin ke baare mein aap pooch sakte hain:";
+
+        // Filter/Map suggestions based on language logic if needed?
+        // Currently returning all suggestion objects, frontend can decide what text to show?
+        // No, let's return raw objects, frontend handles display.
+
+        await dbHelpers.insert(db, 'chat_messages', {
+          query_id: queryId,
+          sender: 'bot',
+          text: replyText,
+          raw_text: replyText,
+          media_urls: '[]',
+          pipeline_version: PIPELINE_VERSION,
+          created_at: new Date().toISOString()
+        });
+
+        return new Response(
+          JSON.stringify({
+            text: replyText,
+            mediaUrls: [],
+            faqId: null,
+            queryId,
+            suggestions,
+            pipelineLogs
+          } as BotResponse),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
 
     // --- CACHE LOGIC START ---
     let cacheEnabled = true;

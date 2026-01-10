@@ -12,10 +12,34 @@ export interface FAQ {
 
 export interface Media {
   id: number;
-  title: string;
-  type: 'video' | 'image' | 'document';
-  url: string;
-  created_at: string;
+  filename: string;
+  description?: string;
+  type?: 'image' | 'video';
+  created_at?: string;
+}
+
+export interface Suggestion {
+  id: number;
+  english_text: string;
+  urdu_text: string;
+  roman_text: string;
+  linked_faq_id: number;
+  created_at?: string;
+}
+
+export interface BotRequest {
+  message: string;
+  userName: string;
+  userId?: string | null;
+  suggestionFaqId?: number; // If present, bypasses AI and loads this FAQ directly
+}
+
+export interface BotResponse {
+  text: string;
+  mediaUrls: string[];
+  faqId: number | null;
+  queryId: string | null;
+  suggestions?: Suggestion[]; // For short query suggestion chips
 }
 
 export interface ChatMessage {
@@ -27,6 +51,7 @@ export interface ChatMessage {
   mediaUrls?: string[];
   created_at: string; // ISO string for precise time
   queryId?: string | null; // For linking to logs
+  suggestions?: Suggestion[];
 }
 
 export interface User {
@@ -42,18 +67,18 @@ export interface UserWithStats extends User {
 }
 
 export interface Conversation {
-    id: number;
-    user_id: string;
-    created_at: string;
-    title?: string; // Optional: For display in a chat list, using the first message.
-    is_deleted_by_user?: boolean;
+  id: number;
+  user_id: string;
+  created_at: string;
+  title?: string; // Optional: For display in a chat list, using the first message.
+  is_deleted_by_user?: boolean;
 }
 
 export interface ConversationWithStats extends Conversation {
-    message_count?: number;
-    time_spent?: number; // in seconds
-    last_message_at?: string;
-    user?: { name: string | null }; // For joining user data
+  message_count?: number;
+  time_spent?: number; // in seconds
+  last_message_at?: string;
+  user?: { name: string | null }; // For joining user data
 }
 
 

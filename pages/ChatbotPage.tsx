@@ -7,7 +7,7 @@
     useLayoutEffect,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { ChatMessage, FAQ, Media, Conversation, User } from '../types';
+import type { ChatMessage, FAQ, Media, Conversation, User, Suggestion } from '../types';
 import { api } from '../lib/apiClient';
 import { isAdmin, updateUserInfo, getCurrentUserId, getCurrentUserName, clearAuth } from '../lib/auth';
 
@@ -24,7 +24,150 @@ import {
     MenuIcon,
     FlagIcon,
     LogoutIcon,
+    ChipIcon,
 } from '../components/icons';
+
+// ... (existing code)
+
+const handleSend = useCallback(
+    async (messageText?: string, suggestionFaqId?: number) => {
+        if (isConversationLoading) return;
+        const userInput = messageText || input;
+        if (userInput.trim() === '' || isLoading || !currentUser) return;
+
+        // Check for /debug command
+        if (userInput.trim().toLowerCase() === '/debug') {
+            if (isAdmin()) {
+                navigate('/dashboard/reports');
+            } else {
+                // Not admin - redirect to login with return path
+                navigate('/login?redirect=/dashboard/reports');
+            }
+            if (!messageText) {
+                setInput('');
+            }
+            return;
+        }
+
+        if (!messageText) {
+            setInput('');
+        }
+
+        let currentConversationId = activeConversationId;
+        const userMessagePayload = { sender: 'user' as const, text: userInput };
+
+        try {
+            if (!currentConversationId) {
+                setIsLoading(true);
+                const tempUserMsg = addMessageToState(
+                    userMessagePayload,
+                    0,
+                    messages.length === 0,
+                );
+
+                const newConversation = await api.createConversation(
+                    currentUser.id,
+                    userInput,
+                );
+                currentConversationId = newConversation.id;
+
+                setConversations(prev => [newConversation, ...prev]);
+                setActiveConversationId(currentConversationId);
+
+                setMessages(prev =>
+                    prev.map(m =>
+                        m.id === tempUserMsg.id
+                            ? { ...m, conversation_id: currentConversationId! }
+                            : m,
+                    ),
+                );
+
+                await api.createMessage({
+                    conversationId: currentConversationId,
+                    sender: userMessagePayload.sender,
+                    text: userMessagePayload.text,
+                });
+            } else {
+                addMessageToState(userMessagePayload, currentConversationId);
+                await api.createMessage({
+                    conversationId: currentConversationId,
+                    sender: userMessagePayload.sender,
+                    text: userMessagePayload.text,
+                });
+            }
+
+            setIsLoading(true);
+            setIsThinking(true);
+
+            // ⬇️ Call Edge Function for bot response (OpenAI key stays server-side)
+            const botResponse = await api.getBotResponse({
+                message: userInput,
+                userName: currentUser.name,
+                userId: currentUser.id,
+                suggestionFaqId, // Pass suggestionFaqId if present
+            });
+
+            if (botResponse.faqId) {
+                incrementFaqCount(botResponse.faqId);
+            }
+
+            const mediaUrls = botResponse.mediaUrls || [];
+
+            const botMessagePayload = {
+                sender: 'bot' as const,
+                text: botResponse.text,
+                mediaUrls,
+                queryId: botResponse.queryId,
+                suggestions: botResponse.suggestions, // Add suggestions to state
+            };
+            console.log('[BOT_RESPONSE]', {
+                question: userInput,
+                faqId: botResponse.faqId,
+                mediaUrls,
+                suggestions: botResponse.suggestions,
+            });
+
+            if (botResponse.pipelineLogs && botResponse.pipelineLogs.length > 0) {
+                console.group('🤖 BOT PIPELINE DEBUG LOGS');
+                botResponse.pipelineLogs.forEach(log => console.log(log));
+                console.groupEnd();
+            }
+
+            addMessageToState(botMessagePayload, currentConversationId!);
+            setIsThinking(false);
+
+            // Note: We are NOT persisting suggestions to DB, they are ephemeral for the session
+            await api.createMessage({
+                conversationId: currentConversationId!,
+                sender: botMessagePayload.sender,
+                text: botMessagePayload.text,
+                mediaUrls: botMessagePayload.mediaUrls,
+                queryId: botMessagePayload.queryId,
+            });
+        } catch (error: any) {
+            console.error('Error sending message:', error);
+            setIsThinking(false);
+            showToast(
+                `Could not send message: ${error.message || 'Unknown error'}`,
+                'error',
+            );
+        } finally {
+            setIsLoading(false);
+        }
+    },
+    [
+        activeConversationId,
+        currentUser,
+        incrementFaqCount,
+        input,
+        isLoading,
+        isConversationLoading,
+        messages.length,
+        showToast,
+        navigate,
+        messages,
+    ],
+);
 
 const SIDEBAR_BG = 'bg-[#1A1F2E] border-[#08101a]';
 
@@ -687,6 +830,7 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
         }
     };
 
+
     const renderMessageContent = (message: ChatMessage) => {
         const isUserMessage = message.sender === 'user';
         const boldColorClass = isUserMessage ? 'text-background/90' : 'text-primary';
@@ -786,6 +930,29 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                             );
                         })}
                 </div>
+
+                {/* Suggestions Chips - Only for Bot Messages */}
+                {!isUserMessage && message.suggestions && message.suggestions.length > 0 && (
+                    <div className="mt-4 flex flex-wrap gap-2 animate-fade-in-up">
+                        {message.suggestions.map((suggestion) => (
+                            <button
+                                key={suggestion.id}
+                                onClick={() => handleSend(suggestion.english_text, suggestion.linked_faq_id)}
+                                className="group flex flex-col items-start bg-surface-light/50 hover:bg-primary/10 border border-primary/20 hover:border-primary/50 text-text-primary px-3 py-2 rounded-xl transition-all duration-300 text-left"
+                            >
+                                <span className="text-sm font-semibold group-hover:text-primary transition-colors flex items-center gap-1">
+                                    <ChipIcon className="w-3 h-3 text-primary/70 group-hover:text-primary" />
+                                    {suggestion.english_text}
+                                </span>
+                                {suggestion.urdu_text && (
+                                    <span className="text-xs text-text-secondary/80 group-hover:text-text-primary transition-colors font-urdu mt-0.5">
+                                        {suggestion.urdu_text}
+                                    </span>
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
         );
     };

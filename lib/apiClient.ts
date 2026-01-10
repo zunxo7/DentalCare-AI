@@ -5,6 +5,7 @@ import type {
   Conversation,
   ChatMessage,
   User,
+  Suggestion,
 } from '../types';
 
 // Vercel automatically handles /api/* routing to Edge Functions
@@ -146,6 +147,18 @@ export const api = {
 
   incrementFaqCount: (id: number) =>
     request<void>(`${API_BASE}/faqs/${id}/increment`, { method: 'POST' }),
+
+  // Suggestions
+  getSuggestions: () => request<Suggestion[]>(`${API_BASE}/suggestions`),
+
+  addSuggestion: (english_text: string, linked_faq_id: number) =>
+    request<Suggestion>(`${API_BASE}/suggestions`, {
+      method: 'POST',
+      body: JSON.stringify({ english_text, linked_faq_id }),
+    }),
+
+  deleteSuggestion: (id: number) =>
+    request<void>(`${API_BASE}/suggestions?id=${id}`, { method: 'DELETE' }),
 
   // Media
   getMedia: () => request<Media[]>(`${API_BASE}/media`),
@@ -310,6 +323,7 @@ export const api = {
     message: string;
     userName: string;
     userId?: string | null;
+    suggestionFaqId?: number;
   }) => {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
@@ -340,6 +354,7 @@ export const api = {
       faqId: number | null;
       queryId: string | null;
       pipelineLogs?: string[];
+      suggestions?: Suggestion[];
     };
   },
 };

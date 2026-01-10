@@ -6,11 +6,12 @@ import type { FAQ, Media, DashboardStats } from './types';
 import ChatbotPage from './pages/ChatbotPage';
 import DashboardPage from './pages/DashboardPage';
 import ManageFaqsPage from './pages/ManageFaqsPage';
+import ManageSuggestionsPage from './pages/ManageSuggestionsPage';
 import MediaLibraryPage from './pages/MediaLibraryPage';
 import UserConversationsPage from './pages/UserConversationsPage';
 import AdminLoginPage from './pages/AdminLoginPage';
 import ReportsPage from './pages/ReportsPage';
-import { BackIcon, FaqIcon, MediaIcon, ChatIcon, MenuIcon, DashboardIcon, SpinnerIcon, ReportsIcon } from './components/icons';
+import { BackIcon, FaqIcon, MediaIcon, ChatIcon, MenuIcon, DashboardIcon, SpinnerIcon, ReportsIcon, ChipIcon } from './components/icons';
 import { api } from './lib/apiClient';
 import { isAdmin, setAdminStatus } from './lib/auth';
 
@@ -148,6 +149,7 @@ const AppContent: React.FC = () => {
         if (location.pathname.includes('/media')) return 'Media Library';
         if (location.pathname.includes('/conversations')) return 'User Conversations';
         if (location.pathname.includes('/reports')) return 'Reports';
+        if (location.pathname.includes('/suggestions')) return 'Suggestions';
         if (location.pathname.includes('/dashboard')) return 'Dashboard';
         return 'Assistant';
     };
@@ -182,9 +184,14 @@ const AppContent: React.FC = () => {
                             </button>
                         )}
                         <button onClick={() => navigate('/dashboard/conversations')} className="bg-surface-light text-text-primary px-4 py-2 rounded-full hover:bg-primary hover:text-background font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[140px] h-9"><ChatIcon className="w-4 h-4 flex-shrink-0" /> <span>Conversations</span></button>
+                        <button onClick={() => navigate('/dashboard/suggestions')} className={`px-4 py-2 rounded-full font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9 ${location.pathname.includes('/suggestions')
+                            ? 'bg-primary text-background'
+                            : 'bg-surface-light text-text-primary hover:bg-primary hover:text-background'
+                            }`}><ChipIcon className="w-4 h-4 flex-shrink-0" /> <span>Suggestions</span>
+                        </button>
                         <button onClick={() => navigate('/dashboard/reports')} className={`px-4 py-2 rounded-full font-semibold transition-colors flex items-center justify-center gap-2 text-sm min-w-[100px] h-9 ${location.pathname.includes('/reports')
-                                ? 'bg-primary text-background'
-                                : 'bg-surface-light text-text-primary hover:bg-primary hover:text-background'
+                            ? 'bg-primary text-background'
+                            : 'bg-surface-light text-text-primary hover:bg-primary hover:text-background'
                             }`}>
                             <ReportsIcon className="w-4 h-4 flex-shrink-0" /> <span>Reports</span>
                         </button>
@@ -207,9 +214,13 @@ const AppContent: React.FC = () => {
                                         </li>
                                     )}
                                     <li><button onClick={() => handleMobileNav('/dashboard/conversations')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><ChatIcon /> Conversations</button></li>
+                                    <li><button onClick={() => handleMobileNav('/dashboard/suggestions')} className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${location.pathname.includes('/suggestions')
+                                        ? 'bg-primary/20 text-primary'
+                                        : 'hover:bg-surface-light'
+                                        }`}><ChipIcon /> Suggestions</button></li>
                                     <li><button onClick={() => handleMobileNav('/dashboard/reports')} className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${location.pathname.includes('/reports')
-                                            ? 'bg-primary/20 text-primary'
-                                            : 'hover:bg-surface-light'
+                                        ? 'bg-primary/20 text-primary'
+                                        : 'hover:bg-surface-light'
                                         }`}><ReportsIcon /> Reports</button></li>
                                     <li><button onClick={() => handleMobileNav('/dashboard/faqs')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><FaqIcon /> FAQs</button></li>
                                     <li><button onClick={() => handleMobileNav('/dashboard/media')} className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-light transition-colors"><MediaIcon /> Media</button></li>
@@ -236,6 +247,7 @@ const AppContent: React.FC = () => {
                     <Route path="/dashboard/media" element={<ProtectedRoute><MediaLibraryPage media={media} refreshData={fetchData} loading={loading} showToast={showToast} /></ProtectedRoute>} />
                     <Route path="/dashboard/conversations" element={<ProtectedRoute><UserConversationsPage /></ProtectedRoute>} />
                     <Route path="/dashboard/reports" element={<ProtectedRoute><ReportsPage showToast={showToast} /></ProtectedRoute>} />
+                    <Route path="/dashboard/suggestions" element={<ProtectedRoute><ManageSuggestionsPage refreshData={fetchData} showToast={showToast} /></ProtectedRoute>} />
                     <Route path="/" element={<Navigate to="/chat" replace />} />
                     <Route path="*" element={<Navigate to="/chat" replace />} />
                 </Routes>
