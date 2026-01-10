@@ -5,7 +5,8 @@ import type {
   Conversation,
   ChatMessage,
   User,
-  Suggestion,
+  SuggestionGroup,
+  SuggestionChip,
 } from '../types';
 
 // Vercel automatically handles /api/* routing to Edge Functions
@@ -149,12 +150,12 @@ export const api = {
     request<void>(`${API_BASE}/faqs/${id}/increment`, { method: 'POST' }),
 
   // Suggestions
-  getSuggestions: () => request<Suggestion[]>(`${API_BASE}/suggestions`),
+  getSuggestions: () => request<SuggestionGroup[]>(`${API_BASE}/suggestions`),
 
-  addSuggestion: (english_text: string, linked_faq_id: number) =>
-    request<Suggestion>(`${API_BASE}/suggestions`, {
+  addSuggestion: (data: { keywords: string; chips: { text_en: string; linked_faq_id: number }[] }) =>
+    request<SuggestionGroup>(`${API_BASE}/suggestions`, {
       method: 'POST',
-      body: JSON.stringify({ english_text, linked_faq_id }),
+      body: JSON.stringify(data),
     }),
 
   deleteSuggestion: (id: number) =>
@@ -354,8 +355,7 @@ export const api = {
       faqId: number | null;
       queryId: string | null;
       pipelineLogs?: string[];
-      suggestions?: Suggestion[];
+      suggestions?: SuggestionChip[];
     };
   },
 };
-

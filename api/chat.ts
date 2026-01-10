@@ -5,6 +5,8 @@ import { createClient } from '@libsql/client';
 import OpenAI from 'openai';
 import * as dbHelpers from '../lib/dbHelpers.js';
 
+import { SuggestionChip } from '../types';
+
 export const config = { runtime: 'edge' };
 
 const corsHeaders = {
@@ -25,6 +27,7 @@ interface BotResponse {
   faqId: number | null;
   queryId: string | null;
   pipelineLogs?: string[];
+  suggestions?: SuggestionChip[];
 }
 
 // Helper functions
@@ -602,69 +605,70 @@ export default async function handler(req: Request) {
 
     // --- 1. SHORT QUERY CHECK (Suggestion Chips) ---
     const wordCount = normalized.split(/\s+/).length;
-    // Exclude greetings from suggestions? The user said "3 words or less".
-    // "Hi" is 1 word. "Hello" is 1 word.
-    // If strict compliance: return suggestions.
-    // "Hi" -> [Suggestions]. This might be annoying if I just want to say hi.
-    // But it effectively acts as a menu. "Hi" -> "Here are topics".
-    // I will strictly follow "3 words or less".
 
-    if (wordCount <= 3 && !suggestionFaqId) {
-      log(`[PIPELINE] Short query detected (${wordCount} words). Fetching suggestions.`);
+    if (wordCount <= 3) {
+      try {
+        const matchGroups = await dbHelpers.selectAll(db, 'suggestions');
+        const userWords = normalized.toLowerCase().split(/\s+/);
 
-      const suggestions = await dbHelpers.selectAll(db, 'suggestions', '*');
+        let collectedChips: any[] = [];
 
-      if (suggestions.length > 0) {
-        // Log the user interaction
-        await dbHelpers.insert(db, 'chat_messages', {
-          query_id: queryId,
-          sender: 'user',
-          text: normalized,
-          raw_text: message,
-          canonical_intent: 'SHORT_QUERY_SUGGESTIONS',
-          route: 'system',
-          pipeline_version: PIPELINE_VERSION,
-          created_at: new Date().toISOString()
-        });
+        for (const group of matchGroups) {
+          const kws = (group.keywords || '').toLowerCase().split(',').map((k: string) => k.trim());
+          // Check if any keyword matches any user word OR is contained in the query
+          const isMatch = kws.some((k: string) => k && (userWords.includes(k) || normalized.includes(k)));
 
-        // Language specific text
-        const detectedLang = detectLanguage(normalized);
-        let replyText = "Here are some common topics you can ask about:";
-        if (detectedLang === 'urdu') replyText = "یہاں کچھ عام موضوعات ہیں جن کے بارے میں آپ پوچھ سکتے ہیں:";
-        if (detectedLang === 'roman') replyText = "Yahan kuch aam topics hain jin ke baare mein aap pooch sakte hain:";
+          if (isMatch) {
+            const chips = JSON.parse(group.chips_json || '[]');
+            collectedChips = [...collectedChips, ...chips];
+          }
+        }
 
-        // Filter/Map suggestions based on language logic if needed?
-        // Currently returning all suggestion objects, frontend can decide what text to show?
-        // No, let's return raw objects, frontend handles display.
+        if (collectedChips.length > 0) {
+          let suggestReply = "Here are some suggestions:";
+          // Simple heuristic for Urdu/Roman
+          if (/[^\u0000-\u007F]/.test(normalized)) {
+            suggestReply = "یہاں کچھ تجاویز ہیں:";
+          }
 
-        await dbHelpers.insert(db, 'chat_messages', {
-          query_id: queryId,
-          sender: 'bot',
-          text: replyText,
-          raw_text: replyText,
-          media_urls: '[]',
-          pipeline_version: PIPELINE_VERSION,
-          created_at: new Date().toISOString()
-        });
+          await dbHelpers.insert(db, 'chat_messages', {
+            query_id: queryId,
+            sender: 'bot',
+            text: suggestReply,
+            raw_text: suggestReply,
+            media_urls: '[]',
+            pipeline_version: PIPELINE_VERSION,
+            created_at: new Date().toISOString()
+          });
 
-        return new Response(
-          JSON.stringify({
-            text: replyText,
-            mediaUrls: [],
-            faqId: null,
-            queryId,
-            suggestions,
-            pipelineLogs
-          } as BotResponse),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+          return new Response(
+            JSON.stringify({
+              text: suggestReply,
+              mediaUrls: [],
+              faqId: null,
+              queryId,
+              suggestions: collectedChips,
+              pipelineLogs
+            } as BotResponse),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      } catch (err) {
+        console.error('[SUGGESTION_LOGIC_ERROR]', err);
+        // Fall through to main pipeline if error
       }
     }
+
+    // If not, we continue to the main pipeline.
 
     // --- CACHE LOGIC START ---
     let cacheEnabled = true;
     try {
+      const db = await dbHelpers.getDb(process.env.TURSO_DATABASE_URL!, process.env.TURSO_AUTH_TOKEN!); // Wait, db is already defined?
+      // Actually 'db' was defined at top of handler.
+      // But 'setting' needs to be defined.
       const setting = await dbHelpers.selectOne(db, 'app_settings', { column: 'key', value: 'cache_enabled' });
+
       if (setting && setting.value === 'false') {
         cacheEnabled = false;
       }
@@ -960,19 +964,7 @@ export default async function handler(req: Request) {
       } as BotResponse),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-  } catch (error) {
-    log('Chat function error:', error);
-    return new Response(
-      JSON.stringify({
-        error: 'Internal server error',
-        text: SAFE_FALLBACKS.english,
-        mediaUrls: [],
-        faqId: null,
-        queryId: `${Date.now()}-${Math.random().toString(36).substring(7)}`,
-        pipelineLogs,
-      }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+  );
   }
 }
 

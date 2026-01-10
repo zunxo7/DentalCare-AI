@@ -11,6 +11,8 @@ const corsHeaders = {
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
 };
 
+// ... (imports remain)
+
 export default async function handler(req: Request) {
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders });
@@ -29,52 +31,75 @@ export default async function handler(req: Request) {
         const url = new URL(req.url);
 
         if (req.method === 'GET') {
-            const suggestions = await dbHelpers.selectAll(db, 'suggestions', '*', { column: 'created_at', ascending: false });
-            return new Response(JSON.stringify(suggestions), {
+            const rawGroups = await dbHelpers.selectAll(db, 'suggestions', '*', { column: 'created_at', ascending: false });
+            // Parse chips_json for frontend
+            const groups = rawGroups.map((g: any) => ({
+                ...g,
+                chips: JSON.parse(g.chips_json || '[]'),
+            }));
+            return new Response(JSON.stringify(groups), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }
 
         if (req.method === 'POST') {
-            const { english_text, linked_faq_id } = await req.json();
+            // body: { keywords: string, chips: { text_en: string, linked_faq_id: number }[] }
+            const { keywords, chips } = await req.json();
 
-            if (!english_text || !linked_faq_id) {
-                return new Response('Missing required fields', { status: 400, headers: corsHeaders });
+            if (!keywords || !chips || !Array.isArray(chips) || chips.length === 0) {
+                return new Response('Missing keywords or chips', { status: 400, headers: corsHeaders });
             }
 
-            // 1. Auto-translate using LLM
-            const translationPrompt = `
-      You are a professional translator for a dental chatbot.
-      Translate the following English phrase into:
-      1. Urdu (proper script)
-      2. Roman Urdu (phonetic alphabet)
+            // 1. Process all chips: Translate in parallel
+            const processedChips = await Promise.all(chips.map(async (chip: any) => {
+                const translationPrompt = `
+                You are a professional translator for a dental chatbot.
+                Translate the following English phrase into:
+                1. Urdu (proper script)
+                2. Roman Urdu (phonetic alphabet)
+          
+                Phrase: "${chip.text_en}"
+          
+                Respond strictly in JSON format:
+                {
+                  "urdu": "...",
+                  "roman": "..."
+                }
+                `;
 
-      Phrase: "${english_text}"
+                try {
+                    const completion = await openai.chat.completions.create({
+                        model: 'gpt-4o-mini',
+                        messages: [{ role: 'system', content: 'You are a translator.' }, { role: 'user', content: translationPrompt }],
+                        response_format: { type: 'json_object' },
+                    });
 
-      Respond strictly in JSON format:
-      {
-        "urdu": "...",
-        "roman": "..."
-      }
-      `;
+                    const translations = JSON.parse(completion.choices[0].message.content || '{}');
+                    return {
+                        text_en: chip.text_en,
+                        text_ur: translations.urdu || chip.text_en,
+                        text_roman: translations.roman || chip.text_en,
+                        linked_faq_id: chip.linked_faq_id
+                    };
+                } catch (e) {
+                    console.error('Translation failed for chip:', chip.text_en, e);
+                    // Fallback to English if translation fails
+                    return {
+                        text_en: chip.text_en,
+                        text_ur: chip.text_en,
+                        text_roman: chip.text_en,
+                        linked_faq_id: chip.linked_faq_id
+                    };
+                }
+            }));
 
-            const completion = await openai.chat.completions.create({
-                model: 'gpt-4o-mini',
-                messages: [{ role: 'system', content: 'You are a translator.' }, { role: 'user', content: translationPrompt }],
-                response_format: { type: 'json_object' },
+            // 2. Insert Group into DB
+            const newGroup = await dbHelpers.insert(db, 'suggestions', {
+                keywords,
+                chips_json: JSON.stringify(processedChips),
             });
 
-            const translations = JSON.parse(completion.choices[0].message.content || '{}');
-
-            // 2. Insert into DB
-            const newSuggestion = await dbHelpers.insert(db, 'suggestions', {
-                english_text,
-                urdu_text: translations.urdu || english_text, // Fallback
-                roman_text: translations.roman || english_text, // Fallback
-                linked_faq_id,
-            });
-
-            return new Response(JSON.stringify(newSuggestion), {
+            return new Response(JSON.stringify(newGroup), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }

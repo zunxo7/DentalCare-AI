@@ -18,12 +18,18 @@ export interface Media {
   created_at?: string;
 }
 
-export interface Suggestion {
-  id: number;
-  english_text: string;
-  urdu_text: string;
-  roman_text: string;
+export interface SuggestionChip {
+  text_en: string;
+  text_ur: string;
+  text_roman: string;
   linked_faq_id: number;
+}
+
+export interface SuggestionGroup {
+  id: number;
+  keywords: string;
+  chips_json: string; // Stored as JSON string in DB
+  chips?: SuggestionChip[]; // Parsed for frontend
   created_at?: string;
 }
 
@@ -39,7 +45,7 @@ export interface BotResponse {
   mediaUrls: string[];
   faqId: number | null;
   queryId: string | null;
-  suggestions?: Suggestion[]; // For short query suggestion chips
+  suggestions?: SuggestionChip[]; // For short query suggestion chips
 }
 
 export interface ChatMessage {
@@ -51,7 +57,7 @@ export interface ChatMessage {
   mediaUrls?: string[];
   created_at: string; // ISO string for precise time
   queryId?: string | null; // For linking to logs
-  suggestions?: Suggestion[];
+  suggestions?: SuggestionChip[];
 }
 
 export interface User {

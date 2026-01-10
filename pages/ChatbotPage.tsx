@@ -7,7 +7,7 @@
     useLayoutEffect,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { ChatMessage, FAQ, Media, Conversation, User, Suggestion } from '../types';
+import type { ChatMessage, FAQ, Media, Conversation, User, SuggestionChip } from '../types';
 import { api } from '../lib/apiClient';
 import { isAdmin, updateUserInfo, getCurrentUserId, getCurrentUserName, clearAuth } from '../lib/auth';
 
@@ -934,19 +934,19 @@ const ChatbotPage: React.FC<ChatbotPageProps> = ({ faqs, media, incrementFaqCoun
                 {/* Suggestions Chips - Only for Bot Messages */}
                 {!isUserMessage && message.suggestions && message.suggestions.length > 0 && (
                     <div className="mt-4 flex flex-wrap gap-2 animate-fade-in-up">
-                        {message.suggestions.map((suggestion) => (
+                        {message.suggestions.map((suggestion, idx) => (
                             <button
-                                key={suggestion.id}
-                                onClick={() => handleSend(suggestion.english_text, suggestion.linked_faq_id)}
+                                key={`${suggestion.linked_faq_id}-${idx}`}
+                                onClick={() => handleSend(suggestion.text_en, suggestion.linked_faq_id)}
                                 className="group flex flex-col items-start bg-surface-light/50 hover:bg-primary/10 border border-primary/20 hover:border-primary/50 text-text-primary px-3 py-2 rounded-xl transition-all duration-300 text-left"
                             >
                                 <span className="text-sm font-semibold group-hover:text-primary transition-colors flex items-center gap-1">
                                     <ChipIcon className="w-3 h-3 text-primary/70 group-hover:text-primary" />
-                                    {suggestion.english_text}
+                                    {suggestion.text_en}
                                 </span>
-                                {suggestion.urdu_text && (
+                                {suggestion.text_ur && (
                                     <span className="text-xs text-text-secondary/80 group-hover:text-text-primary transition-colors font-urdu mt-0.5">
-                                        {suggestion.urdu_text}
+                                        {suggestion.text_ur}
                                     </span>
                                 )}
                             </button>
