@@ -652,6 +652,11 @@ export default async function handler(req: Request) {
 
     const normalized = isValidInput(trimmed, MAX_INPUT_LENGTH) ? trimmed : truncateText(trimmed, MAX_INPUT_LENGTH);
 
+    // Identify suggestion candidates (3 words or less)
+    const queryWordCount = normalized.split(/\s+/).filter(w => w.length > 0).length;
+    const isSuggestionCandidate = queryWordCount <= 3;
+
+
     // --- 0. SUGGESTION CLICK HANDLING (Direct Resolution) ---
     if (suggestionFaqId) {
       log(`[PIPELINE] Suggestion Click Detected: FAQ ID ${suggestionFaqId}`);
@@ -735,9 +740,11 @@ export default async function handler(req: Request) {
     let cachedRoute: RouteCategory | null = null;
     let cachedFaqId: number | null = null;
 
-    // Attempt to read from cache ONLY if enabled
-    if (cacheEnabled) {
+    // Attempt to read from cache ONLY if enabled and NOT a suggestion candidate
+    if (cacheEnabled && !isSuggestionCandidate) {
       try {
+        log(`[CACHE] Checking cache for query: "${normalized}"`);
+
         // Find RECENT message with SAME text and SAME version
         const result = await db.execute({
           sql: `SELECT canonical_intent, route, resolved_faq_id, query_id
@@ -812,8 +819,13 @@ export default async function handler(req: Request) {
     }
 
     if (!usingCached && cacheEnabled) {
-      log('[CACHE] MISS - Computing fresh values');
+      if (isSuggestionCandidate) {
+        log('[CACHE] BYPASS - Suggestion candidate (short query) always fetches fresh data');
+      } else {
+        log('[CACHE] MISS - Computing fresh values');
+      }
     }
+
     // --- CACHE LOGIC END ---
 
     // 1. Language Detection (Always run, fast and needed for response)
@@ -841,9 +853,7 @@ export default async function handler(req: Request) {
 
     // --- SUGGESTION CHIPS CHECK (using canonical intent) ---
     // Only check if original query is short (3 words or less)
-    const queryWordCount = normalized.split(/\s+/).length;
-
-    if (queryWordCount <= 3) {
+    if (isSuggestionCandidate) {
       try {
         const matchGroups = await dbHelpers.selectAll(db, 'suggestions');
         const intentWords = canonicalIntent.toLowerCase().split(/\s+/);
